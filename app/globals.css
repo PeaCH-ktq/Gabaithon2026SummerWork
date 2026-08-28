@@ -24,3 +24,62 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+/* --- 問題用紙（A4 = 210mm x 297mm） --- */
+.question-paper {
+  width: 210mm;
+  min-height: 297mm;
+  box-sizing: border-box;
+}
+
+/* 図（インライン SVG ＋ KaTeX ラベル overlay） */
+.figure {
+  max-width: 110mm;
+  margin: 0 auto;
+  break-inside: avoid;
+}
+.figure-canvas {
+  position: relative;
+  width: 100%;
+}
+.figure-body {
+  position: absolute;
+  inset: 0;
+}
+.figure-body svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+.figure-label {
+  position: absolute;
+  font-size: 13px;
+  line-height: 1;
+  white-space: nowrap;
+  background: rgba(255, 255, 255, 0.85);
+  padding: 0 2px;
+}
+.figure-label .katex {
+  font-size: 1em;
+}
+
+/* 印刷時は @page に余白を持たせ、問題用紙は通常フローで複数ページに流す。
+   画面用 UI には print:hidden が付いているのでここでは隠さない。 */
+@page {
+  size: A4;
+  margin: 18mm;
+}
+
+@media print {
+  body {
+    background: #fff;
+  }
+  .question-paper {
+    width: auto;
+    min-height: 0;
+    box-shadow: none;
+  }
+  .question-paper li {
+    break-inside: avoid;
+  }
+}
