@@ -1,11 +1,10 @@
 # 大学生単位取得特化型学習アプリ TanE（タンイー）
 
-このリポジトリは、**Next.js (App Router / TypeScript / Tailwind CSS)** を使用したWebアプリケーションのプロジェクトです。  
-新規参画者や開発者がスムーズにローカル環境を立ち上げられるよう、環境構築および開発手順をまとめています。
+大学生は単位取得にお金を惜しまない！ということでそれを支援しつつお金もいただくことを目的とした、SNS型単位取得支援アプリです。
 
 ---
-
-## 前提要件 (Prerequisites)
+## 環境構築
+### 前提要件 (Prerequisites)
 
 ローカル環境に以下のツールがインストールされていることを確認してください。
 
@@ -18,6 +17,12 @@
 node -v
 npm -v
 git --version
+```
+
+### 依存パッケージのインストール
+```bash
+npm install
+# または pnpm install / yarn install / bun install
 ```
 
 <br>
