@@ -1,3 +1,28 @@
+# 大学生単位取得特化型学習アプリ TanE（タンイー）
+
+このリポジトリは、**Next.js (App Router / TypeScript / Tailwind CSS)** を使用したWebアプリケーションのプロジェクトです。  
+新規参画者や開発者がスムーズにローカル環境を立ち上げられるよう、環境構築および開発手順をまとめています。
+
+---
+
+## 前提要件 (Prerequisites)
+
+ローカル環境に以下のツールがインストールされていることを確認してください。
+
+- **Node.js**: `v20.x` 以上推奨 (LTS)
+- **パッケージマネージャー**: `npm`, `pnpm`, または `yarn`
+- **Git**
+
+バージョン確認コマンド:
+```bash
+node -v
+npm -v
+git --version
+```
+
+<br>
+<br>
+
 This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
 
 ## Getting Started
