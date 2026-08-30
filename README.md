@@ -146,7 +146,7 @@ AI をゴリゴリ活かしたい（無料枠だと Gemini API）。
 
 ### モデルとコスト
 
-- 開発 / デモは無料枠の `gemini-2.5-flash`（`GEMINI_MODEL` で差し替え可）
+- 開発 / デモは無料枠の `gemini--flash`（`GEMINI_MODEL` で差し替え可）
 - 無料枠には RPM / RPD 制限があり、429 は API から `{ error }` (HTTP 429) で返す
 - 本番運用時は有料枠へ
 
