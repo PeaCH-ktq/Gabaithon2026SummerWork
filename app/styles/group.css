@@ -1,0 +1,106 @@
+/* ================================================================
+   8. Group workspace
+   メンバー、ミーティング、共有教材、活動履歴のレイアウト。
+   ================================================================ */
+/* グループ名と参加メンバーを中央配置する紹介エリア。 */
+.group-hero { text-align: center; padding: 10px 0 30px; }
+.avatar-stack { display: flex; justify-content: center; margin-bottom: 18px; }
+.avatar-stack span {
+  width: 36px;
+  height: 36px;
+  border: 3px solid var(--paper);
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  color: white;
+  background: var(--indigo);
+  font-weight: 700;
+  margin-left: -7px;
+}
+.avatar-stack span:nth-child(2) { background: var(--coral); }
+.avatar-stack span:nth-child(3) { background: var(--green); }
+.avatar-stack span:nth-child(4) { background: #a875aa; }
+.avatar-stack span:last-child { background: #e7e5df; color: var(--muted); font-size: 10px; }
+.group-hero .button { margin-top: 18px; }
+/* 勉強会、共有教材、活動履歴を2カラムに配置する。 */
+.group-grid { display: grid; grid-template-columns: 1.4fr .8fr; gap: 18px; }
+.group-grid .content-card { margin-top: 0; }
+.meetings { grid-column: 1; }
+.shared-card { grid-column: 2; grid-row: 1/3; }
+.activity { grid-column: 1; }
+/* 次回の勉強会について、日時・場所・参加操作を表示する。 */
+.meeting {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  border-top: 1px solid var(--line);
+  padding: 16px 0;
+}
+.meeting-date {
+  width: 125px;
+  display: flex;
+  flex-direction: column;
+  color: var(--indigo);
+}
+.meeting-date strong { font-size: 11px; }
+.meeting-date span { font: 600 12px var(--font-display); }
+.meeting-info { flex: 1; }
+.meeting-info h3 { font-size: 13px; }
+.meeting-info p { font-size: 9px; color: var(--muted); }
+.copyright-note {
+  background: #fff9dc;
+  color: #746624;
+  border: 1px solid #ebe1a8;
+  border-radius: 10px;
+  padding: 11px;
+  margin: 13px 0;
+  font-size: 9px;
+}
+/* グループに公開されている講義棚へのリンク。 */
+.shared-shelf {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border: 0;
+  border-top: 1px solid var(--line);
+  background: white;
+  padding: 13px 3px;
+  text-align: left;
+}
+.shared-shelf>span { width: 6px; height: 30px; border-radius: 5px; }
+.shared-shelf>div { flex: 1; }
+.shared-shelf b { font-size: 11px; }
+.shared-shelf small { font-size: 8px; color: var(--muted); }
+/* メンバーが記録した課題時間と補足コメント。 */
+.activity-row {
+  display: flex;
+  gap: 12px;
+  border-top: 1px solid var(--line);
+  padding: 16px 0;
+}
+.activity-row>div { flex: 1; }
+.activity-row p:first-child { display: flex; gap: 8px; }
+.activity-row p b { font-size: 11px; }
+.activity-row p small { font-size: 8px; color: var(--muted); }
+.activity-row h3 { font-size: 12px; }
+.spent {
+  display: inline-block;
+  margin-top: 3px;
+  background: #fff2a7;
+  font: 700 11px var(--font-display);
+  padding: 1px 7px;
+  border-radius: 4px;
+}
+.activity-row .note { font-size: 10px; color: var(--muted); margin-top: 7px; }
+
+@media (max-width:1050px) {
+  .group-grid { grid-template-columns: 1fr; }
+  .meetings,.shared-card,.activity { grid-column: auto; grid-row: auto; }
+}
+
+@media (max-width:720px) {
+  .group-hero h1 { font-size: 24px; }
+  .meeting { align-items: flex-start; flex-wrap: wrap; }
+  .meeting-date { width: 100%; }
+}
