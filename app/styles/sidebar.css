@@ -1,0 +1,150 @@
+/* ================================================================
+   2. App shell / Sidebar
+   デスクトップの固定サイドバーと、全画面共通のナビゲーション。
+   ================================================================ */
+/* 左端に固定するサイドバー本体。モバイルでは下部ナビに変化する。 */
+.sidebar {
+  position: fixed;
+  inset: 0 auto 0 0;
+  width: 230px;
+  background: #fbfaf7;
+  border-right: 1px solid var(--line);
+  padding: 28px 17px 20px;
+  display: flex;
+  flex-direction: column;
+  z-index: 20;
+}
+/* アプリ名とロゴを組み合わせた、ホームへ戻るブランドボタン。 */
+.brand {
+  border: 0;
+  background: none;
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 0 10px 34px;
+  cursor: pointer;
+  text-align: left;
+}
+/* 紙面をイメージしたロゴマークをCSSだけで描画する。 */
+.brand-mark {
+  width: 34px;
+  height: 34px;
+  border-radius: 11px;
+  background: var(--indigo);
+  display: grid;
+  place-items: center;
+  transform: rotate(-5deg);
+  box-shadow: 0 6px 16px #5661bd40;
+}
+.brand-mark span {
+  width: 14px;
+  height: 18px;
+  border: 2px solid white;
+  border-radius: 2px;
+  position: relative;
+}
+.brand-mark span:after {
+  content: "";
+  position: absolute;
+  left: 2px;
+  right: 2px;
+  top: 5px;
+  height: 2px;
+  background: white;
+  box-shadow: 0 4px white;
+}
+.brand-copy,.sidebar-foot>span:nth-child(2),.file-row>div,.selection-list label>div,.reference-past>div,.shared-shelf>div { display: flex; flex-direction: column; }
+.brand-copy b { font: 700 22px/1 var(--font-display); }
+.brand-copy small { font: 600 8px/1.8 var(--font-display); letter-spacing: .12em; color: var(--muted); }
+/* active クラスで現在位置を強調するメインナビゲーション。 */
+.sidebar nav { display: flex; flex-direction: column; }
+.nav-label {
+  font: 600 10px var(--font-display);
+  letter-spacing: .15em;
+  color: #aaa8b1;
+  padding: 0 12px 8px;
+}
+.nav-label.second { margin-top: 28px; }
+.nav-item {
+  border: 0;
+  background: transparent;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 11px 12px;
+  margin: 2px 0;
+  border-radius: 10px;
+  color: #747487;
+  cursor: pointer;
+  text-align: left;
+  position: relative;
+}
+.nav-item:hover { background: #f2f0eb; color: var(--ink); }
+.nav-item.active { background: var(--soft); color: var(--dark); font-weight: 700; }
+.nav-item.active:before {
+  content: "";
+  position: absolute;
+  left: -17px;
+  top: 9px;
+  bottom: 9px;
+  width: 4px;
+  border-radius: 0 4px 4px 0;
+  background: var(--indigo);
+}
+.nav-item em {
+  margin-left: auto;
+  background: #efebe6;
+  font: 700 10px var(--font-display);
+  padding: 1px 7px;
+  border-radius: 20px;
+  font-style: normal;
+}
+.online-dot {
+  margin-left: auto;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #57ad7e;
+  box-shadow: 0 0 0 3px #dff2e7;
+}
+/* ログイン中のユーザー情報を表示するサイドバー下部。 */
+.sidebar-foot {
+  margin-top: auto;
+  border-top: 1px solid var(--line);
+  padding: 18px 8px 0;
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+.sidebar-foot b { font-size: 12px; }
+.sidebar-foot small { font-size: 9px; color: var(--muted); white-space: nowrap; }
+.sidebar-foot button { border: 0; background: none; margin-left: auto; }
+.avatar {
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  color: #fff;
+  font-weight: 700;
+  flex: none;
+}
+.indigo { background: var(--indigo); }
+.coral { background: var(--coral); }
+.green { background: var(--green); }
+
+/* スマートフォンではサイドバーを画面下部ナビに変える。 */
+@media (max-width:720px) {
+  .sidebar { inset: auto 0 0; width: 100%; height: 70px; padding: 7px 10px; border: 0; border-top: 1px solid var(--line); }
+  .brand,.nav-label,.sidebar-foot { display: none; }
+  .sidebar nav { height: 100%; flex-direction: row; }
+  .nav-item { flex-direction: column; justify-content: center; gap: 2px; width: 25%; padding: 4px; font-size: 9px; margin: 0; }
+  .nav-item.active:before { left: 50%; top: -7px; bottom: auto; width: 24px; height: 3px; transform: translateX(-50%); }
+  .nav-item em,.online-dot { display: none; }
+}
+
+/* 印刷時は操作用ナビゲーションを表示しない。 */
+@media print {
+  .sidebar { display: none !important; }
+}
