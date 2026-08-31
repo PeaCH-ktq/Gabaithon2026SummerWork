@@ -34,6 +34,10 @@ yarn-error.log*
 .env*
 !.env.example
 
+# supabase (CLI が作る作業用ファイル。migrations は commit する)
+supabase/.temp/
+supabase/.branches/
+
 # vercel
 .vercel
 
