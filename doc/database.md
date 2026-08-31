@@ -218,11 +218,12 @@ $$;
 - バケット `materials`（**private**）。
 - パス規則: `{user_id}/{material_id}/{file_name}`。
 - Storage ポリシー: `(storage.foldername(name))[1] = auth.uid()::text` の本人のみ。
-- アップロードはブラウザから**署名付き URL で直接** Storage へ行い、完了後に `materials` 行を
-  insert する。現状の実装（Route Handler 経由、Vercel のボディ上限 4.5MB 弱）から移行し、
-  大きい資料も扱えるようにする。
+- **アップロードはブラウザから anon キー＋RLS で直接** Storage へ行う（署名付き URL は不要）。
+  クライアントで `crypto.randomUUID()` で `material_id` を採番し、パスとして使用。
+  アップロード完了後に `materials` テーブルへ行を insert する。
+  署名付き URL 発行エンドポイントは不要であり、Vercel のボディ上限も回避できる。
 - 問題生成 API はファイル本体ではなく `materialId` を受け取り、サーバー側で Storage から
-  ダウンロードして Gemini に渡す形に変更する。
+  ダウンロードして Gemini に渡す形に変更する（詳細はタスク「問題生成 API を `materialId` 受け取りに変更」参照）。
 
 ## 必要な環境変数
 
@@ -251,45 +252,198 @@ Google ログイン時、Calendar への書き込み権限（`calendar.events` �
 - [`proxy.ts`](../proxy.ts)（Next.js 16 で `middleware.ts` から改名されたセッション更新用ファイル）
   を実装し、`npm run dev` で `/` と `/dev/generate` が正常応答することを確認済み。
 - `.env.local` に `NEXT_PUBLIC_SUPABASE_URL` / `NEXT_PUBLIC_SUPABASE_ANON_KEY` /
-  `SUPABASE_SERVICE_ROLE_KEY` を設定済み。`GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` は未設定。
+  `SUPABASE_SERVICE_ROLE_KEY` を設定済み。
+- **Google ログイン実装は完了**（コード側）:
+  - [`lib/supabase/auth.ts`](../lib/supabase/auth.ts) — `signInWithGoogle()` ヘルパー関数。
+    `calendar.events` スコープ ＋ `access_type=offline` ＋ `prompt=consent` を指定済み。
+    フロント側はログインボタンの `onClick` からこれを呼ぶだけでよい。
+  - [`app/auth/callback/route.ts`](../app/auth/callback/route.ts) — OAuth コールバック Route Handler。
+    `provider_refresh_token` を `google_credentials` へ upsert 済み。オープンリダイレクト対策あり。
+  - `.env.example` に `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` の注記を追加済み
+    （値はアプリから読まれず Supabase ダッシュボードに設定するもの）。
+  - **残りはダッシュボード側の設定作業のみ**（タスク「Google ログインの設定」参照）。
+
+## 担当範囲（BE / FE）
+
+バックエンド（BE）とフロントエンド（FE）の担当を以下のように分ける。
+
+### 基本原則: RLS 直叩き ＋ 必要な所だけ API
+
+単純な CRUD（`shelves` / `materials` / `question_sets` / `groups` 等の作成・編集・削除・一覧）は
+**フロント側が `supabase-js` でブラウザから直接叩き、RLS が認可を保証する**。
+`supabase/migrations/0002_rls.sql` は元々この前提で全テーブルにポリシーが書かれており、
+追加実装が最小で済む。
+
+バックエンドが Route Handler を提供するのは、以下のいずれかに該当する場合**のみ**:
+
+1. **サーバー専用の秘密が要る**: `GEMINI_API_KEY` / service-role キー / Google の refresh token
+2. **RLS だけでは表現できない認可**: 招待コードでの参加（`join_group_by_code` RPC で解決済み）
+3. **外部 API を叩く**: Gemini / Google Calendar
+
+### バックエンド（BE）の成果物
+
+- データベース: マイグレーション SQL（[supabase/migrations/](../supabase/migrations/)）
+- RLS・Storage ポリシー: 認可ロジック（[0001_init.sql](../supabase/migrations/0001_init.sql) / 
+  [0002_rls.sql](../supabase/migrations/0002_rls.sql)）
+- Storage バケット `materials` の作成
+- **型定義** [`lib/supabase/types.ts`](../lib/supabase/types.ts) —
+  フロント・バック両者の契約（TypeScript で静的に型チェックできるように）
+- クライアント scaffolding: [`lib/supabase/client.ts`](../lib/supabase/client.ts) /
+  [`lib/supabase/server.ts`](../lib/supabase/server.ts) / [`lib/supabase/admin.ts`](../lib/supabase/admin.ts)
+- **クライアント用ヘルパー** [`lib/supabase/auth.ts`](../lib/supabase/auth.ts) —
+  `signInWithGoogle()` が唯一のクライアント公開関数
+- Route Handler（下記参照）
+
+### バックエンド提供の Route Handler
+
+| エンドポイント | 状態 | 要件 | 用途 |
+| --- | --- | --- | --- |
+| `GET /auth/callback` | 既実装（未コミット） | service-role | Google OAuth コールバック処理 |
+| `POST /api/questions/generate` | 要改修 | `GEMINI_API_KEY` | 資料から問題生成、保存済み問題集を返す |
+| `POST /api/calendar/events` | 未着手 | refresh token + Google Calendar API | 勉強予定を Google Calendar へ書き込み |
+| `DELETE /api/calendar/events/[id]` | 未着手 | refresh token + Google Calendar API | 予定をキャンセル |
+
+### フロントエンド（FE）が `supabase-js` で直接叩いてよいテーブル
+
+RLS ポリシーが認可を保証するため、以下のテーブル・Storage は**自由に CRUD できる**：
+
+- `shelves` —作成・編集・削除・一覧（本人 / 共有先グループメンバー）
+- `materials` —作成・削除・一覧（本人のみ。所有者以外には見えない）
+- `question_sets` —作成・編集・削除・一覧（本人 / 共有先グループメンバー）
+- `groups` —作成・一覧・編集・削除（メンバーのみが見える、owner のみ編集可）
+- `group_members` —一覧・削除（参加は `join_group_by_code` RPC のみ）
+- `shelf_shares` / `question_set_shares` —作成・削除・一覧（所有者のみ）
+- `study_sessions` —作成・編集・削除・一覧（グループメンバーのみ）
+- `assignments` / `assignment_reports` —作成・編集・削除・一覧（権限に応じて）
+- `profiles` —一覧・編集（自分の行のみ編集可、表示名・アイコン URL など）
+- Storage バケット `materials` —アップロード・ダウンロード・削除（本人のみ。RLS で守られている）
+
+### フロントエンド（FE）の成果物
+
+本ドキュメントで「FE」と書かれたタスク（UI実装、画面遷移、`supabase-js` 呼び出し等）。
+RLS と型定義が BE から提供されるため、**認可・検証ロジックの実装は不要**。
 
 ## 今後のタスク
 
-1. **Google ログインの設定**
-   - Supabase ダッシュボード（Authentication > Providers > Google）で Google OAuth を有効化。
-   - Google Cloud Console 側で OAuth クライアントを作成し、`calendar.events` スコープを追加。
-   - ログイン処理で `access_type=offline` + `prompt=consent` を指定し、
-     初回ログイン時に返る `provider_refresh_token` を Route Handler で
-     `google_credentials` テーブルへ保存する処理を実装する（[本ドキュメントの該当節](#6-google-カレンダー連携)参照）。
+### 1. Google ログインの設定（BE）
 
-2. **`materials` バケットの作成**
-   - Supabase Storage ダッシュボードで `materials` バケットを **private** で作成する
-     （`0002_rls.sql` の Storage ポリシーはバケット作成前提で書かれている）。
-   - ブラウザ → Storage への署名付き URL 直アップロードのフローを実装する
-     （[Storage 節](#storage)参照）。現状の `app/api/questions/generate/route.ts` は
-     ファイル本体を受け取る実装なので、`materialId` を受け取る形に変更する。
+**対応**: コード側は完了。ダッシュボード設定のみ。
 
-3. **棚（shelves）・資料（materials）の CRUD**
-   - 棚の作成・一覧・編集・削除。
-   - 資料アップロード（Storage 直アップロード完了後に `materials` へ insert）。
+- Supabase ダッシュボード（Authentication > Providers > Google）で Google OAuth を有効化
+- Google Cloud Console 側で OAuth クライアントを作成し、`calendar.events` スコープを追加
+- `.env.local` に `GOOGLE_CLIENT_ID` と `GOOGLE_CLIENT_SECRET` を設定
 
-4. **問題生成結果の保存**
-   - `generateQuestions` の戻り値（`QuestionSet`）を `question_sets.content` に保存する処理を
-     `app/api/questions/generate/route.ts` に追加する。
-   - 保存済み問題集の一覧・再表示（`components/QuestionPaper.tsx` への読み戻し）。
+**完了条件**: フロント側が `signInWithGoogle()` を呼ぶだけでログインでき、
+ログイン完了時に `google_credentials.refresh_token` が DB に保存される。
 
-5. **グループ機能**
-   - グループ作成（`invite_code` 発行）、`join_group_by_code` 経由の参加。
-   - `shelf_shares` / `question_set_shares` による共有・非表示設定。
+**FE タスク**: 実装済み。
 
-6. **勉強予定・課題**
-   - `study_sessions` の作成・一覧。
-   - Google Calendar への実書き込み（`google_credentials` の refresh token でサーバー側から
-     Calendar API を呼び、`calendar_events` に `google_event_id` を保存）。
-   - `assignments` / `assignment_reports` の作成・投稿・一覧
-     （ホーム画面の「7 日以内の締切」は `assignments.due_at` を絞るだけで実装できる）。
+- [`app/login/page.tsx`](../app/login/page.tsx) — Google ログインボタン。
+  `?next=` と `?auth_error=` を解釈する。
+- [`app/logout/page.tsx`](../app/logout/page.tsx) — マウント時に `signOut()` を呼ぶ
+  ログアウト画面。サイドバー右下のボタンからここへ遷移する。
+- [`lib/supabase/auth.ts`](../lib/supabase/auth.ts) に `signOut()` を追加。
+- [`proxy.ts`](../proxy.ts) — 未ログインで保護ページを開くと `/login?next=...` へ、
+  ログイン済みで `/login` を開くと `/` へリダイレクト（`/auth/*`・`/api/*` は除外）。
 
-7. **`supabase gen types typescript` への差し替え**
-   - プロジェクトが安定してきたら、[`lib/supabase/types.ts`](../lib/supabase/types.ts) の
-     暫定型を CLI 生成の型に差し替える（`question_sets.content` は `QuestionSet` 型への
-     キャストが必要な点は変わらない）。
+### 2. `materials` Storage バケット作成（BE）
+
+**対応**: マイグレーション SQL で作成する。
+
+- `supabase/migrations/0003_storage.sql` を新規作成し、以下を実行:
+  ```sql
+  insert into storage.buckets (id, name, public) 
+  values ('materials', 'materials', false);
+  ```
+  （ダッシュボード手作業より再現性が高く、`supabase db push` に載る）
+
+**完了条件**: フロント側がブラウザから `supabase.storage.from("materials").upload()` を呼べる。
+[Storage 節](#storage)に記載のパス規則 `{user_id}/{material_id}/{file_name}` を守ること。
+
+**FE タスク**:
+- 資料アップロード UI
+- クライアント側で `crypto.randomUUID()` で `material_id` を採番し、
+  Storage パスと `materials` テーブルの `id` の両方に使用
+- アップロード完了後に `materials.insert()` で DB に行を追加
+
+### 3. 問題生成 API を `materialId` 受け取りに変更（BE）
+
+**対応**: [app/api/questions/generate/route.ts](../app/api/questions/generate/route.ts) を改修。
+
+- 現状: `multipart/form-data` でファイル本体を受け取る
+- 変更後: `{ materialId: string, instruction?: string }` の JSON を受け取る
+- **ダウンロード時は [lib/supabase/server.ts](../lib/supabase/server.ts) のセッション付きクライアントを使う**
+  （admin クライアントを使うと他人の資料も読めてしまい、RLS の意味がない）
+- 生成結果 `QuestionSet` をそのまま `question_sets.content` へ INSERT して、
+  レスポンスで返す（保存も一度に行う）
+
+**完了条件**: フロント側が `POST /api/questions/generate` に
+`{ materialId, instruction }` を POST するだけで、
+新規に保存された `question_sets` 行が返される（ID・title・content）。
+
+**FE タスク**:
+- 「問題を生成」ボタン・UI（資料選択 → 問題生成 API 呼び出し）
+- 生成中のローディング表示
+- 生成結果を `components/QuestionPaper.tsx` へ渡して A4 用紙として表示
+
+### 4. Google Calendar 連携（BE）
+
+**対応**: 2 つの Route Handler を実装。
+
+- `POST /api/calendar/events`
+  - ペイロード: `{ study_session_id: string }`
+  - 動作: `google_credentials` から refresh token を取得 → Google Calendar API で イベント作成
+  - 返り値: `{ event_id: string }` + `calendar_events.insert()` で DB に行追加
+- `DELETE /api/calendar/events/[id]`
+  - パラメータ: Google Calendar のイベント ID
+  - 動作: Calendar API でイベント削除 + DB から `calendar_events` 行を削除
+
+**完了条件**: フロント側が `study_sessions` 作成後に上記エンドポイントを呼ぶだけで、
+ユーザーの Google Calendar に自動書き込みされる。
+
+**FE タスク**:
+- 勉強予定作成画面（`title` / `location` / `starts_at` / `ends_at`）
+- 「Google Calendar へ追加」ボタン（上記 API を呼び出し）
+- 予定一覧・編集・キャンセル
+
+### 5. 棚（shelves）・資料（materials）の CRUD（FE）
+
+**対応**: フロント側が `supabase-js` で直接 CRUD。バックエンド実装は不要（RLS が守る）。
+
+- 棚の作成・一覧・編集・削除画面
+- 資料アップロード UI（タスク 2 に同じ）
+- 各棚に属する資料一覧の表示
+
+### 6. 問題集の共有（FE）
+
+**対応**: フロント側が `supabase-js` で `question_set_shares` を直接操作。バックエンド実装は不要。
+
+- 生成済み問題集の一覧
+- グループへの共有ボタン
+- 共有済み問題集の表示（[components/QuestionPaper.tsx](../components/QuestionPaper.tsx) へ読み戻し）
+
+### 7. グループ機能（FE）
+
+**対応**: フロント側が `supabase-js` で直接 CRUD。バックエンド実装は不要（RLS が守る）。
+
+- グループ作成（`invite_code` 自動発行）
+- 招待コード入力で参加（`join_group_by_code` RPC を呼び出し）
+- グループメンバー一覧・脱退
+- `shelf_shares` / `question_set_shares` による共有・非表示設定の UI
+
+### 8. 課題（assignments）・課題結果投稿（FE）
+
+**対応**: フロント側が `supabase-js` で直接 CRUD。バックエンド実装は不要。
+
+- 課題作成・編集・削除画面
+- 課題一覧（ホーム画面で「7 日以内の締切」は `assignments.due_at` を WHERE で絞るだけで取得可）
+- 課題結果投稿画面（`minutes_spent` / `comment` の入力）
+- 投稿済み結果の一覧
+
+### 9. `supabase gen types typescript` への差し替え（BE）
+
+**対応**: 暫定型を CLI 生成の型に差し替える。
+
+- プロジェクトが安定してきたら、`supabase gen types typescript --project-id=<id>` を実行
+- [lib/supabase/types.ts](../lib/supabase/types.ts) を自動生成のものに差し替え
+- `question_sets.content` の型は `QuestionSet` へのキャストが必要（元々の型定義の方針は変わらない）

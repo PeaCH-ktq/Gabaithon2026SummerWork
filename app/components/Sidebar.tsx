@@ -1,3 +1,5 @@
+import Link from "next/link";
+
 import type { Navigate, View } from "../types";
 import { Icon, type IconName } from "./ui";
 
@@ -52,9 +54,9 @@ export function Sidebar({ view, navigate }: Props) {
           <b>ゆうた</b>
           <small>工学部 情報工学科</small>
         </span>
-        <button aria-label="ユーザーメニュー">
+        <Link href="/logout" aria-label="ログアウト" title="ログアウト">
           <Icon name="more" />
-        </button>
+        </Link>
       </div>
     </aside>
   );
