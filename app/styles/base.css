@@ -1,0 +1,46 @@
+/* ================================================================
+   1. Design tokens / Global defaults
+   アプリ全体で共有する色・余白の基準とブラウザ既定値を定義する。
+   ================================================================ */
+:root {
+  --ink: #202234;
+  --muted: #737487;
+  --paper: #f5f4ef;
+  --card: #fff;
+  --line: #e5e2da;
+  --indigo: #5661bd;
+  --dark: #444e9d;
+  --soft: #eef0ff;
+  --coral: #e77968;
+  --green: #4e9a79;
+  --shadow: 0 18px 50px #2c2a3a14;
+}
+/* 全要素の寸法計算を統一し、ページ全体の基本表示を整える。 */
+* { box-sizing: border-box; }
+html { background: var(--paper); scroll-behavior: smooth; }
+body {
+  margin: 0;
+  color: var(--ink);
+  background: var(--paper);
+  font: 14px/1.65 var(--font-jp),sans-serif;
+}
+button,input { font: inherit; }
+button { color: inherit; }
+button:focus-visible,input:focus-visible { outline: 3px solid #5661bd47; outline-offset: 2px; }
+h1,h2,h3,p { margin: 0; }
+.app-shell { display: flex; min-height: 100dvh; }
+
+/* スマートフォンでは下部ナビゲーション用の余白を確保する。 */
+@media (max-width:720px) {
+  .app-shell { display: block; padding-bottom: 70px; }
+}
+
+/* 印刷時は紙面に不要なページ背景を除去する。 */
+@media print {
+  body { background: #fff; }
+}
+
+/* OSで動きを抑える設定が選ばれている場合はアニメーションを停止する。 */
+@media (prefers-reduced-motion:reduce) {
+  * { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
+}

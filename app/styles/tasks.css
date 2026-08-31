@@ -1,0 +1,61 @@
+/* ================================================================
+   7. Task board
+   未完了・完了タスクの一覧と期限ステータス。
+   ================================================================ */
+/* 未完了・完了のグループを縦方向に並べる課題一覧。 */
+.task-board { display: grid; gap: 34px; }
+.task-board section>h2 { margin-bottom: 12px; }
+.task-board section>h2 span {
+  font: 600 10px var(--font-display);
+  color: var(--muted);
+  background: #e8e6e0;
+  border-radius: 20px;
+  padding: 2px 7px;
+}
+/* 1件の課題。done と urgent で完了・期限間近の状態を表す。 */
+.task-card {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+  background: white;
+  border: 1px solid var(--line);
+  border-radius: 13px;
+  padding: 14px 16px;
+  margin: 8px 0;
+}
+.task-check {
+  width: 22px;
+  height: 22px;
+  border: 2px solid #cfcdc6;
+  border-radius: 7px;
+  display: grid;
+  place-items: center;
+  color: white;
+}
+.task-check.urgent { border-color: var(--coral); }
+.task-card>div:nth-child(2) { flex: 1; }
+.task-course { font-size: 9px; color: var(--indigo); font-weight: 700; }
+.task-card h3 { font-size: 13px; }
+.task-card p {
+  font-size: 9px;
+  color: var(--muted);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.due-tag,.complete-tag {
+  font-size: 10px;
+  background: #f0efe9;
+  padding: 3px 9px;
+  border-radius: 20px;
+  color: var(--muted);
+}
+.due-tag.urgent { background: #fff0ed; color: #bd5d4f; }
+.task-card.done { opacity: .72; }
+.task-card.done .task-check { background: var(--green); border-color: var(--green); }
+.task-card.done h3 { text-decoration: line-through; }
+.complete-tag { background: #e7f3ed; color: var(--green); }
+
+@media (max-width:720px) {
+  .task-card { align-items: flex-start; flex-wrap: wrap; }
+}

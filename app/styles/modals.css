@@ -1,0 +1,192 @@
+/* ================================================================
+   9. Dialogs / Feedback
+   作成フローのモーダル、フォーム、ローディング、トースト通知。
+   ================================================================ */
+/* 背景操作を遮断し、モーダルを画面中央に置くオーバーレイ。 */
+.modal-scrim {
+  position: fixed;
+  inset: 0;
+  background: #1b1b296f;
+  backdrop-filter: blur(4px);
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  z-index: 100;
+}
+/* 問題作成と勉強会作成で共用するダイアログ本体。 */
+.modal {
+  width: min(540px,100%);
+  max-height: 90dvh;
+  overflow: auto;
+  background: #fff;
+  border-radius: 22px;
+  padding: 31px;
+  box-shadow: 0 35px 90px #18182340;
+  position: relative;
+}
+.modal-close {
+  position: absolute;
+  right: 18px;
+  top: 18px;
+  border: 0;
+  background: #f1f0ed;
+  border-radius: 50%;
+  width: 32px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+}
+.modal>h2 { font-size: 22px; }
+.modal>p:not(.eyebrow) { font-size: 11px; color: var(--muted); }
+/* 問題作成フローが何段階目かを示すステップバー。 */
+.modal-steps { display: flex; gap: 6px; margin-bottom: 24px; }
+.modal-steps span {
+  height: 4px;
+  background: #e5e3de;
+  border-radius: 4px;
+  flex: 1;
+}
+.modal-steps span.active { background: var(--indigo); }
+/* 出題元の教材をチェックボックス形式で選択する一覧。 */
+.selection-list {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  overflow: hidden;
+  margin-top: 20px;
+}
+.selection-list label,.reference-past {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  border-bottom: 1px solid var(--line);
+  cursor: pointer;
+}
+.selection-list label:last-child { border: 0; }
+.selection-list input,.reference-past input { position: absolute; opacity: 0; }
+.custom-check {
+  width: 21px;
+  height: 21px;
+  border: 1px solid #cbc9c2;
+  border-radius: 6px;
+  display: grid;
+  place-items: center;
+  color: transparent;
+}
+.selection-list input:checked+.custom-check,.reference-past input:checked+.custom-check { background: var(--indigo); border-color: var(--indigo); color: white; }
+.selection-list b,.reference-past b { font-size: 11px; }
+.selection-list small,.reference-past small { font-size: 9px; color: var(--muted); }
+.modal-actions { display: flex; justify-content: space-between; margin-top: 24px; }
+/* 問題形式・問題数・難易度を3択ボタンで指定する。 */
+.option-group { margin-top: 18px; }
+.option-group>b { display: block; font-size: 11px; margin-bottom: 7px; }
+.option-group>div { display: grid; grid-template-columns: repeat(3,1fr); gap: 7px; }
+.option-group button {
+  border: 1px solid var(--line);
+  background: white;
+  border-radius: 9px;
+  padding: 8px;
+  font-size: 11px;
+}
+.option-group button.active {
+  background: var(--soft);
+  border-color: var(--indigo);
+  color: var(--indigo);
+  font-weight: 700;
+}
+.reference-past { border: 1px solid var(--line); border-radius: 10px; margin-top: 18px; }
+/* 問題生成を待っている間に表示するローディング画面。 */
+.generating { text-align: center; padding: 55px 20px; }
+.magic-loader {
+  width: 68px;
+  height: 68px;
+  border-radius: 22px;
+  background: var(--soft);
+  color: var(--indigo);
+  display: grid;
+  place-items: center;
+  margin: 0 auto 22px;
+  animation: float 1.4s ease-in-out infinite;
+}
+.generating h2 { font-size: 22px; }
+.generating>p:not(.eyebrow) { font-size: 11px; color: var(--muted); margin: 6px auto 23px; }
+.loading-bar {
+  height: 5px;
+  border-radius: 8px;
+  background: #eeece8;
+  overflow: hidden;
+}
+.loading-bar span {
+  display: block;
+  width: 45%;
+  height: 100%;
+  background: var(--indigo);
+  animation: load 1.3s ease-in-out infinite;
+}
+.small-modal { width: min(480px,100%); }
+/* 勉強会作成モーダルで使うラベル付き入力欄。 */
+.text-field {
+  display: flex;
+  flex-direction: column;
+  font-size: 10px;
+  font-weight: 700;
+  margin-top: 17px;
+  gap: 6px;
+}
+.text-field input {
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  padding: 10px 12px;
+  background: #faf9f6;
+}
+.field-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+/* 操作結果を一定時間だけ画面下部に表示する通知。 */
+.toast {
+  position: fixed;
+  z-index: 120;
+  left: 50%;
+  bottom: 25px;
+  transform: translate(-50%,18px);
+  opacity: 0;
+  pointer-events: none;
+  background: var(--ink);
+  color: white;
+  border-radius: 12px;
+  padding: 10px 17px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-size: 11px;
+  transition: .25s;
+}
+.toast.show { opacity: 1; transform: translate(-50%,0); }
+.toast span {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--green);
+  display: grid;
+  place-items: center;
+}
+
+/* ローディング中のアイコンを上下に浮遊させる。 */
+@keyframes float {
+  50% { transform: translateY(-6px) rotate(3deg); }
+}
+
+/* プログレスバーを左から右へ繰り返し移動させる。 */
+@keyframes load {
+  from { transform: translateX(-110%); }
+  to { transform: translateX(245%); }
+}
+
+@media (max-width:720px) {
+  .modal { padding: 26px 20px; }
+  .field-pair { grid-template-columns: 1fr; }
+  .modal-actions { gap: 8px; }
+  .modal-actions .button { flex: 1; }
+}
+
+@media print {
+  .toast,.modal-scrim { display: none !important; }
+}
