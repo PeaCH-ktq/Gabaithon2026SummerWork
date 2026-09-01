@@ -1,10 +1,12 @@
 import { questions } from "../../demo-data";
 import type { Navigate, Notify } from "../../types";
 import { Button } from "../ui";
+import { QuestionPaper } from "@/components/QuestionPaper";
+import type { QuestionSet } from "@/lib/gemini/schema";
 
-type Props = { navigate: Navigate; notify: Notify };
+type Props = { navigate: Navigate; notify: Notify; questionSet?: QuestionSet | null };
 
-export function QuizView({ navigate, notify }: Props) {
+export function QuizView({ navigate, notify, questionSet }: Props) {
   return (
     <>
       <div className="quiz-toolbar">
@@ -20,7 +22,7 @@ export function QuizView({ navigate, notify }: Props) {
           </Button>
         </div>
       </div>
-      <article className="quiz-sheet">
+      {questionSet ? <QuestionPaper questionSet={questionSet} /> : <article className="quiz-sheet">
         <header>
           <div>
             <span>CS-302 ・ DATABASE</span>
@@ -53,7 +55,7 @@ export function QuizView({ navigate, notify }: Props) {
             )}
           </section>
         ))}
-      </article>
+      </article>}
     </>
   );
 }

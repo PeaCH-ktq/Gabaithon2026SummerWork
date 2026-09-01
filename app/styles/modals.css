@@ -76,6 +76,16 @@
 .selection-list input:checked+.custom-check,.reference-past input:checked+.custom-check { background: var(--indigo); border-color: var(--indigo); color: white; }
 .selection-list b,.reference-past b { font-size: 11px; }
 .selection-list small,.reference-past small { font-size: 9px; color: var(--muted); }
+.source-status { padding: 16px; font-size: 10px; color: var(--muted); text-align: center; }
+.local-upload { display: flex; align-items: center; gap: 12px; margin-top: 12px; padding: 13px; border: 1px dashed var(--line); border-radius: 12px; cursor: pointer; }
+.local-upload.selected { border-style: solid; border-color: var(--indigo); background: var(--soft); }
+.local-upload>div { display: flex; flex-direction: column; min-width: 0; }
+.local-upload b { font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.local-upload small { font-size: 9px; color: var(--muted); }
+.local-upload input { position: absolute; width: 1px; height: 1px; opacity: 0; }
+.generation-instruction { display: flex; flex-direction: column; gap: 7px; margin-top: 18px; font-size: 11px; }
+.generation-instruction input { border: 1px solid var(--line); border-radius: 9px; padding: 10px 12px; background: #faf9f6; }
+.modal-error { margin-top: 14px; padding: 9px 11px; border-radius: 8px; background: #fff0f0; color: #a83232 !important; }
 .modal-actions { display: flex; justify-content: space-between; margin-top: 24px; }
 /* 問題形式・問題数・難易度を3択ボタンで指定する。 */
 .option-group { margin-top: 18px; }

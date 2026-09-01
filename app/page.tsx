@@ -12,6 +12,7 @@ import { HomeView } from "./components/views/HomeView";
 import { QuizView } from "./components/views/QuizView";
 import { TasksView } from "./components/views/TasksView";
 import type { View } from "./types";
+import type { QuestionSet } from "@/lib/gemini/schema";
 
 export default function Home() {
   // 現在の画面、モーダル、タブなど、UIの表示状態を管理する。
@@ -21,6 +22,7 @@ export default function Home() {
   const [toast, setToast] = useState("");
   const [activeTab, setActiveTab] = useState<"material" | "quiz">("material");
   const [generating, setGenerating] = useState(false);
+  const [generatedQuiz, setGeneratedQuiz] = useState<QuestionSet | null>(null);
   // 操作結果を画面下部のトースト通知に渡す。
   const notify = (message: string) => setToast(message);
 
@@ -41,15 +43,12 @@ export default function Home() {
     setGenerating(false);
     setModal("create");
   }
-  // AI生成を模した待機表示の後、作成済み問題集へ移動する。
-  function generate() {
-    setGenerating(true);
-    setTimeout(() => {
-      setModal("none");
-      setGenerating(false);
-      navigate("quiz");
-      notify("10問の問題集を作成しました");
-    }, 2200);
+  function finishGeneration(questionSet: QuestionSet) {
+    setGeneratedQuiz(questionSet);
+    setModal("none");
+    setGenerating(false);
+    navigate("quiz");
+    notify(`${questionSet.questions.length}問の問題集を作成しました`);
   }
 
   return (
@@ -77,7 +76,7 @@ export default function Home() {
         )}
         {/* 問題集：印刷やPDF保存に対応した問題用紙。 */}
         {view === "quiz" && (
-          <QuizView navigate={navigate} notify={notify} />
+          <QuizView navigate={navigate} notify={notify} questionSet={generatedQuiz} />
         )}
         {/* 課題：未完了と完了済みのタスクを一覧表示する。 */}
         {view === "tasks" && <TasksView notify={notify} />}
@@ -96,7 +95,8 @@ export default function Home() {
           step={step}
           generating={generating}
           setStep={setStep}
-          generate={generate}
+          setGenerating={setGenerating}
+          onGenerated={finishGeneration}
           onClose={() => setModal("none")}
         />
       )}

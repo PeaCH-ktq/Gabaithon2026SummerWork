@@ -1,10 +1,21 @@
 /** 使用する Gemini モデル。env で差し替え可能（デフォルトは無料枠の gemini-2.5-flash）。 */
 export const GEMINI_MODEL = process.env.GEMINI_MODEL ?? "gemini-3.6-flash";
 
+/** 一時的な混雑時に切り替える、構造化出力対応の安定モデル。 */
+export const GEMINI_FALLBACK_MODEL =
+  process.env.GEMINI_FALLBACK_MODEL ?? "gemini-2.5-flash";
+
 /** 生成パラメータのデフォルト。 */
 export const GENERATION_DEFAULTS = {
   /** 問題は多少の多様性が欲しいが暴走させたくないので低め。 */
   temperature: 0.4,
+} as const;
+
+/** 503 UNAVAILABLE に対する指数バックオフ設定（各モデルごと）。 */
+export const GENERATION_RETRY = {
+  maxAttempts: 3,
+  initialDelayMs: 1_000,
+  maxDelayMs: 4_000,
 } as const;
 
 /** Files API のアップロード後、ファイルが ACTIVE になるまでのポーリング設定。 */
