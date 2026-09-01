@@ -16,7 +16,23 @@ export type Shelf = ShelfRow & {
   sharedGroupIds: string[];
 };
 
-/** @deprecated タスク3で `Shelf` に置換して削除する。デモデータ用の旧型。 */
+/** `materials` テーブルの行そのもの。 */
+export type MaterialRow = Database["public"]["Tables"]["materials"]["Row"];
+
+/** 棚の作成・編集モーダルが親へ渡す値。`owner_id` / `color` は親が補う。 */
+export type ShelfFormValues = {
+  course_name: string;
+  course_code: string | null;
+  professor: string | null;
+  room: string | null;
+  day_of_week: number | null;
+  period: number | null;
+};
+
+/** 棚一覧の読み込み状態（空・ローディング・エラーの3状態）。 */
+export type LoadState = "loading" | "error" | "ready";
+
+/** @deprecated デモデータ（GroupView / QuizView / TasksView）専用の旧型。棚は `Shelf` を使う。 */
 export type Course = {
   code: string;
   name: string;

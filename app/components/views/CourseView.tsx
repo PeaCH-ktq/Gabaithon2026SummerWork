@@ -1,4 +1,5 @@
-import type { Course, Navigate } from "../../types";
+import type { LoadState, MaterialRow, Navigate, Shelf } from "../../types";
+import { formatSchedule } from "@/lib/format/schedule";
 import { Button, Icon } from "../ui";
 
 type Props = {
@@ -6,20 +7,24 @@ type Props = {
   setActiveTab: (tab: "material" | "quiz") => void;
   navigate: Navigate;
   startCreate: () => void;
-  course: Course;
-  materials: string[];
+  shelf: Shelf;
+  materials: MaterialRow[];
+  materialsState: LoadState;
   openMaterial: () => void;
   editCourse: () => void;
   toggleShare: () => void;
 };
+
+const DATE_FMT = new Intl.DateTimeFormat("ja-JP", { month: "long", day: "numeric" });
 
 export function CourseView({
   activeTab,
   setActiveTab,
   navigate,
   startCreate,
-  course,
+  shelf,
   materials,
+  materialsState,
   openMaterial,
   editCourse,
   toggleShare,
@@ -30,10 +35,10 @@ export function CourseView({
         ← 講義の棚
       </button>
       <header className="course-head">
-        <div className="course-code">{course.code}</div>
+        <div className="course-code">{shelf.course_code ?? "—"}</div>
         <div>
-          <h1>{course.name}</h1>
-          <p>{course.professor} ・ {course.schedule} ・ {course.room}</p>
+          <h1>{shelf.course_name}</h1>
+          <p>{shelf.professor ?? "担当教員未設定"} ・ {formatSchedule(shelf.day_of_week, shelf.period)} ・ {shelf.room ?? "教室未設定"}</p>
         </div>
         <Button onClick={editCourse}>棚を編集</Button>
         <Button primary icon="sparkle" onClick={startCreate}>
@@ -52,13 +57,13 @@ export function CourseView({
           className={activeTab === "material" ? "active" : ""}
           onClick={() => setActiveTab("material")}
         >
-          講義資料 <span>6</span>
+          講義資料 <span>{shelf.materialCount}</span>
         </button>
         <button
           className={activeTab === "quiz" ? "active" : ""}
           onClick={() => setActiveTab("quiz")}
         >
-          問題集 <span>3</span>
+          問題集 <span>{shelf.questionSetCount}</span>
         </button>
       </div>
       {activeTab === "material" ? (
@@ -76,16 +81,15 @@ export function CourseView({
             </Button>
           </div>
           <div className="file-list">
-            {materials.length === 0 && <div className="empty-state"><b>資料はまだありません</b><p>「資料を追加」から最初のファイルを選んでください。</p></div>}
-            {materials.map((name, i) => (
-              <div className="file-row" key={name}>
-                <span className="file-icon">PDF</span>
+            {materialsState === "loading" && <div className="empty-state"><b>読み込み中…</b></div>}
+            {materialsState === "error" && <div className="empty-state"><b>資料の読み込みに失敗しました</b></div>}
+            {materialsState === "ready" && materials.length === 0 && <div className="empty-state"><b>資料はまだありません</b><p>「資料を追加」から最初のファイルを選んでください。</p></div>}
+            {materials.map((material) => (
+              <div className="file-row" key={material.id}>
+                <span className="file-icon">{extLabel(material.file_name, material.mime_type)}</span>
                 <div>
-                  <b>{name}</b>
-                  <small>
-                    {[42, 38, 51, 45][i]}ページ ・ 8月{[3, 10, 17, 24][i]}
-                    日追加
-                  </small>
+                  <b>{material.file_name}</b>
+                  <small>{DATE_FMT.format(new Date(material.created_at))}追加</small>
                 </div>
                 <span className="private-pill">自分のみ</span>
                 <button aria-label="その他">
@@ -105,7 +109,7 @@ export function CourseView({
             <Button primary icon="sparkle" onClick={startCreate}>
               新しくつくる
             </Button>
-            <Button icon="share" onClick={toggleShare}>{course.shared ? "共有を解除" : "グループに共有"}</Button>
+            <Button icon="share" onClick={toggleShare}>{shelf.sharedGroupIds.length > 0 ? "共有を解除" : "グループに共有"}</Button>
           </div>
           <div className="file-list">
             {[
@@ -138,4 +142,12 @@ export function CourseView({
       )}
     </>
   );
+}
+
+/** ファイル名の拡張子（なければ MIME から）を短いラベルにする。 */
+function extLabel(fileName: string, mimeType: string | null): string {
+  const ext = fileName.split(".").pop();
+  if (ext && ext !== fileName) return ext.slice(0, 4).toUpperCase();
+  if (mimeType?.includes("pdf")) return "PDF";
+  return "FILE";
 }

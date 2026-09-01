@@ -211,7 +211,7 @@ $$;
 | shelves | 本人、または `shelf_shares` 経由で `is_group_member` かつ `visible = true` | 本人のみ |
 | question_sets | 本人、または `question_set_shares` 経由で `is_group_member` | 本人のみ |
 | question_set_shares | `is_group_member` または `owns_question_set`（SECURITY DEFINER。再帰回避） | `owns_question_set` |
-| groups | `is_group_member(id)` | 作成は誰でも可、更新・削除は `role = 'owner'` |
+| groups | `is_group_member(id)` または `created_by = auth.uid()` | 作成は誰でも可、更新・削除は `role = 'owner'` |
 | group_members | `is_group_member(group_id)` | `join_group_by_code` 経由のみ insert、脱退は本人 |
 | shelf_shares | `is_group_member(group_id)` | 対象棚の所有者 |
 | study_sessions | `is_group_member(group_id)` | 作成はメンバー、更新・削除は作成者 |
@@ -292,8 +292,13 @@ Google ログイン時、Calendar への書き込み権限（`calendar.events` �
 FE 調査で判明した、実装時に踏むと詰まる箇所。
 
 1. ~~**グループ作成者が自分のグループを見られない**~~
-   → **解消済み**（タスク 1）。`20260901131709_ui_alignment.sql` の `on_group_created` トリガー
-   （`handle_new_group`, security definer）が insert 直後に owner 行を入れる。
+   → **解消済み**。2 段構え:
+   (a) `20260901131709_ui_alignment.sql` の `on_group_created` トリガー
+   （`handle_new_group`, security definer）が insert 直後に owner 行を入れる（`role='owner'` 判定用）。
+   (b) `20260901134102_groups_select_creator.sql` で `groups_select_member` に
+   `created_by = auth.uid()` を追加。`insert into groups (...) returning *`（PostgREST の
+   `.insert().select()`）は RETURNING 行に SELECT ポリシーを適用するが、同一ステートメント内の
+   `is_group_member`（STABLE）は AFTER トリガーの挿入をまだ見ないため、(a) だけでは弾かれる。
 
 2. **`POST /api/questions/generate` の `file` ブランチが未認証で通る**
    [`proxy.ts`](../proxy.ts) が `/api/*` を除外しているため。`materialId` ブランチだけが
@@ -401,27 +406,46 @@ Route Handler を置くのは以下のいずれかに該当する場合**のみ*
   - `listShelves` の件数集計は PostgREST 埋め込みを使わず単純クエリ 4 本を JS で畳む
     （手書き `Relationships: []` だと埋め込みで型が壊れるため）。
   - 検証用ハーネス [`app/dev/shelves/page.tsx`](../app/dev/shelves/page.tsx)。
-- **RLS 再帰バグ修正**: [`20260901133538_fix_question_set_shares_recursion.sql`](../supabase/migrations/20260901133538_fix_question_set_shares_recursion.sql)。
-  `question_sets` ⟷ `question_set_shares` の相互参照再帰を `owns_question_set` で解消（適用済み）。
-  タスク 2 の `lib/data/shelves.ts:listShelves` がクライアントから初めて `question_sets` を
-  SELECT したことで顕在化した既存バグ。
+- **タスク 3（棚の実データ化）**: 本番 UI（`page.tsx` / `ShelfModal` / `HomeView` /
+  `CourseView`）を `lib/data/shelves` ＋ `lib/data/materials` へ接続。詳細は下記タスク3節。
+- **RLS バグ修正 2 件**（いずれも既存スキーマの潜在バグ。タスク 2 の
+  `lib/data/*` がクライアントから初めて該当テーブルを叩いて顕在化）:
+  - [`20260901133538_fix_question_set_shares_recursion.sql`](../supabase/migrations/20260901133538_fix_question_set_shares_recursion.sql)
+    — `question_sets` ⟷ `question_set_shares` の相互参照再帰を `owns_question_set` で解消。
+  - [`20260901134102_groups_select_creator.sql`](../supabase/migrations/20260901134102_groups_select_creator.sql)
+    — `groups_select_member` に `created_by = auth.uid()` を追加（グループ作成の
+    `.insert().select()` が RLS で弾かれる問題。落とし穴 1 参照）。
 
 ---
 
-### 3. 棚（shelves）の実データ化
+### 3. 棚（shelves）の実データ化 ✅ 完了
 
-- **対象**: [`app/page.tsx`](../app/page.tsx)（`L26-28` の `useState(initialCourses)` 周辺）、
+- **対象**: [`app/page.tsx`](../app/page.tsx)、
   [`app/components/modals/ShelfModal.tsx`](../app/components/modals/ShelfModal.tsx)、
-  [`app/components/views/CourseView.tsx`](../app/components/views/CourseView.tsx)
-- **やること**:
-  - `courses` / `selectedCode` / `courseMaterials` を実クエリへ。
-    **空配列・ローディング・エラーの 3 状態を追加**（現在 `selectedCode = initialCourses[0].code`
-    は空配列でクラッシュする）
-  - `ShelfModal` → `shelves` の insert / update。`page.tsx:saveCourse` は `id` ベースの upsert に
-  - `CourseView.tsx` のタブ数値リテラル（`講義資料 <span>6</span>` / `問題集 <span>3</span>`）を実カウントに
-  - `CourseView.tsx` の資料行のダミー値（`[42,38,51,45]ページ` / `8月[3,10,17,24]日追加`）を
-    実列（`size_bytes` は無いので削除、`created_at`）へ
-- **完了条件**: 棚の作成・編集・削除がリロード後も残る。
+  [`app/components/views/CourseView.tsx`](../app/components/views/CourseView.tsx)、
+  [`app/components/views/HomeView.tsx`](../app/components/views/HomeView.tsx)
+- **実装内容**:
+  - `page.tsx` を `createClient()` ＋ `lib/data/shelves` へ移行。
+    `shelves` / `shelvesState`（`loading | error | ready`）/ `selectedShelfId`（nullable）を state 化。
+    初期表示は `listShelves` を `useEffect` で読み込み、棚 0 件でもクラッシュしない。
+    講義詳細は `selectedShelf` が `null` の場合フォールバック表示。
+  - `courseMaterials` は `Record<shelfId, MaterialRow[]>`。棚を開くたび
+    `listMaterialsByShelf` で取得（`materialsState` の 3 状態つき）。
+  - `ShelfModal` は `Shelf` / `ShelfFormValues` ベースに刷新。曜日・時限は
+    `<select>`（`DAY_LABELS` / `PERIOD_OPTIONS`）で数値を直接持つ。
+    `onSave(values, id?)` で親が `createShelf` / `updateShelf` を出し分け。
+    新規作成時の色は `pickShelfColor(shelves.length)`。
+  - `HomeView` / `CourseView` は `Course` → `Shelf` へ。件数タブ・棚カードの
+    資料/問題集数は `materialCount` / `questionSetCount` の実カウント。
+    スケジュール文字列は `formatSchedule(day_of_week, period)`。
+    資料行は `file_name` ＋ `created_at`（`size_bytes` 由来のページ数リテラルは削除）。
+  - `app/types.ts` に `MaterialRow` / `ShelfFormValues` / `LoadState` を追加。
+    `Course` はデモ 3 画面（GroupView / QuizView / TasksView）専用として残置。
+  - `.muted` ユーティリティを [`app/styles/common.css`](../app/styles/common.css) に追加。
+- **未対応（後続タスク）**: 資料アップロード本体（タスク4）、問題集リスト・タブ内容（タスク5）、
+  `CourseView` の共有ボタン（タスク7。暫定でトースト通知のみ）。
+- **完了条件**: 棚の作成・編集がリロード後も残る（削除 UI は本番画面には未配置。
+  `lib/data/shelves.deleteShelf` と検証ハーネス [`app/dev/shelves/page.tsx`](../app/dev/shelves/page.tsx) にはあり）。
 
 ### 4. 資料アップロードの実装
 
