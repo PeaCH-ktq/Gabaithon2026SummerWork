@@ -45,6 +45,11 @@ export function Sidebar({ view, navigate, groupName }: Props) {
           <span>{groupName}</span>
           <span className="online-dot" />
         </button>
+        <span className="nav-label second">ACCOUNT</span>
+        <button className={`nav-item ${view === "account" ? "active" : ""}`} onClick={() => navigate("account")}>
+          <Icon name="users" />
+          <span>アカウント</span>
+        </button>
       </nav>
       <div className="sidebar-foot">
         <span className="avatar indigo">ゆ</span>
@@ -52,9 +57,6 @@ export function Sidebar({ view, navigate, groupName }: Props) {
           <b>ゆうた</b>
           <small>工学部 情報工学科</small>
         </span>
-        <button aria-label="ユーザーメニュー" onClick={() => navigate("account")}>
-          <Icon name="more" />
-        </button>
       </div>
     </aside>
   );
