@@ -76,6 +76,16 @@
 .selection-list input:checked+.custom-check,.reference-past input:checked+.custom-check { background: var(--indigo); border-color: var(--indigo); color: white; }
 .selection-list b,.reference-past b { font-size: 11px; }
 .selection-list small,.reference-past small { font-size: 9px; color: var(--muted); }
+.source-status { padding: 16px; font-size: 10px; color: var(--muted); text-align: center; }
+.local-upload { display: flex; align-items: center; gap: 12px; margin-top: 12px; padding: 13px; border: 1px dashed var(--line); border-radius: 12px; cursor: pointer; }
+.local-upload.selected { border-style: solid; border-color: var(--indigo); background: var(--soft); }
+.local-upload>div { display: flex; flex-direction: column; min-width: 0; }
+.local-upload b { font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.local-upload small { font-size: 9px; color: var(--muted); }
+.local-upload input { position: absolute; width: 1px; height: 1px; opacity: 0; }
+.generation-instruction { display: flex; flex-direction: column; gap: 7px; margin-top: 18px; font-size: 11px; }
+.generation-instruction input { border: 1px solid var(--line); border-radius: 9px; padding: 10px 12px; background: #faf9f6; }
+.modal-error { margin-top: 14px; padding: 9px 11px; border-radius: 8px; background: #fff0f0; color: #a83232 !important; }
 .modal-actions { display: flex; justify-content: space-between; margin-top: 24px; }
 /* 問題形式・問題数・難易度を3択ボタンで指定する。 */
 .option-group { margin-top: 18px; }
@@ -139,6 +149,16 @@
   padding: 10px 12px;
   background: #faf9f6;
 }
+.text-field textarea { border: 1px solid var(--line); border-radius: 9px; padding: 10px 12px; background: #faf9f6; resize: vertical; font: inherit; font-weight: 400; }
+.text-field>small { align-self: flex-end; color: var(--muted); font-weight: 400; }
+.report-task-name { margin-top: 6px; color: var(--indigo) !important; font-weight: 700; }
+.duration-fields { margin-top: 20px; border: 0; padding: 0; display: flex; gap: 12px; }
+.duration-fields legend { margin-bottom: 7px; font-size: 10px; font-weight: 700; }
+.duration-fields label { display: flex; align-items: center; gap: 6px; font-size: 11px; }
+.duration-fields input { width: 76px; border: 1px solid var(--line); border-radius: 9px; padding: 10px; background: #faf9f6; }
+.share-notice { display: flex; gap: 10px; margin-top: 16px; padding: 11px; border-radius: 10px; background: var(--soft); color: var(--indigo); }
+.share-notice span { display: flex; flex-direction: column; font-size: 10px; }
+.share-notice small { color: var(--muted); }
 .field-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 /* 操作結果を一定時間だけ画面下部に表示する通知。 */
 .toast {
@@ -190,3 +210,7 @@
 @media print {
   .toast,.modal-scrim { display: none !important; }
 }
+
+.upload-dropzone { width: 100%; min-height: 150px; margin-top: 22px; border: 1px dashed var(--line); border-radius: 14px; background: var(--paper); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; }
+.upload-dropzone:hover { border-color: var(--indigo); background: var(--indigo-soft); }
+.upload-dropzone small { color: var(--muted); }

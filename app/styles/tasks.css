@@ -51,7 +51,10 @@
   color: var(--muted);
 }
 .due-tag.urgent { background: #fff0ed; color: #bd5d4f; }
-.task-card.done { opacity: .72; }
+.task-card.done { background: #fbfbf8; }
+.task-card.done>div:nth-child(2) { opacity: .72; }
+.task-check { background: transparent; cursor: pointer; }
+.task-check:hover { border-color: var(--green); }
 .task-card.done .task-check { background: var(--green); border-color: var(--green); }
 .task-card.done h3 { text-decoration: line-through; }
 .complete-tag { background: #e7f3ed; color: var(--green); }

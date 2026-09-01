@@ -1,6 +1,11 @@
 import { createPartFromText, createPartFromUri, createUserContent } from "@google/genai";
 import { getGeminiClient } from "./client";
-import { GEMINI_MODEL, GENERATION_DEFAULTS } from "./config";
+import {
+  GEMINI_FALLBACK_MODEL,
+  GEMINI_MODEL,
+  GENERATION_DEFAULTS,
+  GENERATION_RETRY,
+} from "./config";
 import { deleteMaterial, uploadMaterial } from "./files";
 import { validateSvg } from "@/lib/svg/validateSvg";
 import { buildQuestionPrompt, type QuestionPromptOptions } from "./prompts";
@@ -60,9 +65,58 @@ export class GeminiRateLimitError extends Error {
   }
 }
 
+/** 全モデルが一時的に利用できなかった場合の、利用者向けエラー。 */
+export class GeminiUnavailableError extends Error {
+  constructor() {
+    super("問題生成サービスが混み合っています。少し待ってからもう一度お試しください。");
+    this.name = "GeminiUnavailableError";
+  }
+}
+
 function isRateLimit(err: unknown): boolean {
   const msg = err instanceof Error ? err.message : String(err);
   return /\b429\b|RESOURCE_EXHAUSTED|rate limit|quota/i.test(msg);
+}
+
+function isUnavailable(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err);
+  return /\b408\b|\b5\d\d\b|UNAVAILABLE|high demand|temporarily overloaded|timeout/i.test(msg);
+}
+
+function wait(ms: number) {
+  return new Promise<void>((resolve) => setTimeout(resolve, ms));
+}
+
+async function generateWithRetry(
+  ai: ReturnType<typeof getGeminiClient>,
+  model: string,
+  contents: ReturnType<typeof createUserContent>,
+) {
+  for (let attempt = 0; attempt < GENERATION_RETRY.maxAttempts; attempt += 1) {
+    try {
+      return await ai.models.generateContent({
+        model,
+        contents,
+        config: {
+          temperature: GENERATION_DEFAULTS.temperature,
+          responseMimeType: "application/json",
+          responseSchema: questionSetResponseSchema,
+        },
+      });
+    } catch (err) {
+      if (isRateLimit(err)) throw new GeminiRateLimitError();
+      if (!isUnavailable(err)) throw err;
+      if (attempt === GENERATION_RETRY.maxAttempts - 1) throw err;
+
+      const exponentialDelay = Math.min(
+        GENERATION_RETRY.initialDelayMs * 2 ** attempt,
+        GENERATION_RETRY.maxDelayMs,
+      );
+      const jitter = Math.floor(Math.random() * 500);
+      await wait(exponentialDelay + jitter);
+    }
+  }
+  throw new GeminiUnavailableError();
 }
 
 /**
@@ -91,21 +145,19 @@ export async function generateQuestions(
     ]);
 
     const ai = getGeminiClient();
+    const models = [...new Set([GEMINI_MODEL, GEMINI_FALLBACK_MODEL])];
     let response;
-    try {
-      response = await ai.models.generateContent({
-        model: GEMINI_MODEL,
-        contents,
-        config: {
-          temperature: GENERATION_DEFAULTS.temperature,
-          responseMimeType: "application/json",
-          responseSchema: questionSetResponseSchema,
-        },
-      });
-    } catch (err) {
-      if (isRateLimit(err)) throw new GeminiRateLimitError();
-      throw err;
+    for (const model of models) {
+      try {
+        response = await generateWithRetry(ai, model, contents);
+        break;
+      } catch (err) {
+        if (!isUnavailable(err)) throw err;
+        console.warn(`[generateQuestions] ${model} が一時的に利用できないため次のモデルを試します`);
+      }
     }
+
+    if (!response) throw new GeminiUnavailableError();
 
     return sanitizeFigures(parseQuestionSet(response.text));
   } finally {
