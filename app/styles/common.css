@@ -75,3 +75,15 @@
 .settings-list>div { display: flex; align-items: center; gap: 14px; padding: 18px 0; border-bottom: 1px solid var(--line); }
 .settings-list span { display: flex; flex: 1; flex-direction: column; }
 .settings-list small { color: var(--muted); }
+.profile-form { max-width: 680px; }
+.profile-avatar-preview { display: flex; align-items: center; gap: 14px; padding-bottom: 20px; border-bottom: 1px solid var(--line); }
+.profile-avatar-preview .avatar { width: 52px; height: 52px; font-size: 18px; }
+.profile-avatar-preview>div { display: flex; flex-direction: column; }
+.profile-avatar-preview small { color: var(--muted); }
+.form-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 24px; }
+.account-action-page { min-height: calc(100vh - 100px); display: grid; place-items: center; }
+.logout-card { width: min(480px,100%); padding: 44px; text-align: center; }
+.logout-card .brand-mark { margin: 0 auto 24px; }
+.logout-card h1 { margin: 5px 0 10px; }
+.logout-card>p:not(.eyebrow) { color: var(--muted); }
+.logout-card .form-actions { justify-content: center; }
