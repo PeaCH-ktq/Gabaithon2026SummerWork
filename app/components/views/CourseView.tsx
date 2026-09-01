@@ -1,4 +1,4 @@
-import type { Assignment, LoadState, MaterialRow, Navigate, Shelf } from "../../types";
+import type { Assignment, LoadState, MaterialRow, Navigate, QuestionSetRow, Shelf } from "../../types";
 import { formatSchedule } from "@/lib/format/schedule";
 import { Button, Icon } from "../ui";
 
@@ -10,7 +10,10 @@ type Props = {
   shelf: Shelf;
   materials: MaterialRow[];
   materialsState: LoadState;
+  questionSets: QuestionSetRow[];
+  questionSetsState: LoadState;
   openMaterial: () => void;
+  openQuiz: (id: string) => void;
   editCourse: () => void;
   toggleShare: () => void;
   assignments: Assignment[];
@@ -27,7 +30,10 @@ export function CourseView({
   shelf,
   materials,
   materialsState,
+  questionSets,
+  questionSetsState,
   openMaterial,
+  openQuiz,
   editCourse,
   toggleShare,
   assignments,
@@ -120,28 +126,21 @@ export function CourseView({
             <Button icon="share" onClick={toggleShare}>{shelf.sharedGroupIds.length > 0 ? "共有を解除" : "グループに共有"}</Button>
           </div>
           <div className="file-list">
-            {[
-              "第1回〜第4回 確認テスト",
-              "正規化ドリル（記述式）",
-              "2025年度中間 類似問題セット",
-            ].map((name, i) => (
+            {questionSetsState === "loading" && <div className="empty-state"><b>読み込み中…</b></div>}
+            {questionSetsState === "error" && <div className="empty-state"><b>問題集の読み込みに失敗しました</b></div>}
+            {questionSetsState === "ready" && questionSets.length === 0 && <div className="empty-state"><b>問題集はまだありません</b><p>「新しくつくる」から最初の問題集を作成してください。</p></div>}
+            {questionSets.map((qs) => (
               <button
                 className="file-row quiz-row"
-                key={name}
-                onClick={() => navigate("quiz")}
+                key={qs.id}
+                onClick={() => { openQuiz(qs.id); navigate("quiz"); }}
               >
                 <span className="quiz-icon">Q</span>
                 <div>
-                  <b>{name}</b>
-                  <small>
-                    {i === 2
-                      ? "過去問参照 ・ 選択式 10問"
-                      : "選択・記述 混合 ・ 10問"}
-                  </small>
+                  <b>{qs.title}</b>
+                  <small>{qs.content.questions.length}問 ・ {DATE_FMT.format(new Date(qs.created_at))}作成</small>
                 </div>
-                <span className={i === 1 ? "private-pill" : "share-pill"}>
-                  {i === 1 ? "自分のみ" : "グループ共有中"}
-                </span>
+                <span className="private-pill">自分のみ</span>
                 <Icon name="arrow" />
               </button>
             ))}

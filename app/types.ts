@@ -34,6 +34,9 @@ export type Shelf = ShelfRow & {
 /** `materials` テーブルの行そのもの。 */
 export type MaterialRow = Database["public"]["Tables"]["materials"]["Row"];
 
+/** `question_sets` テーブルの行そのもの。`content` は `QuestionSet`。 */
+export type QuestionSetRow = Database["public"]["Tables"]["question_sets"]["Row"];
+
 /** 棚の作成・編集モーダルが親へ渡す値。`owner_id` / `color` は親が補う。 */
 export type ShelfFormValues = {
   course_name: string;

@@ -83,6 +83,7 @@ export interface Database {
           created_at: string;
         };
         Insert: {
+          id?: string;
           shelf_id: string;
           owner_id: string;
           storage_path: string;

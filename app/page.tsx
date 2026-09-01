@@ -16,10 +16,11 @@ import { GroupView } from "./components/views/GroupView";
 import { HomeView } from "./components/views/HomeView";
 import { QuizView } from "./components/views/QuizView";
 import { TasksView } from "./components/views/TasksView";
-import type { Assignment, LoadState, MaterialRow, Profile, Shelf, ShelfFormValues, View } from "./types";
+import type { Assignment, LoadState, MaterialRow, Profile, QuestionSetRow, Shelf, ShelfFormValues, View } from "./types";
 import { createClient } from "@/lib/supabase/client";
 import { createShelf, listShelves, updateShelf } from "@/lib/data/shelves";
-import { listMaterialsByShelf } from "@/lib/data/materials";
+import { listMaterialsByShelf, uploadMaterial } from "@/lib/data/materials";
+import { listQuestionSetsByShelf } from "@/lib/data/questionSets";
 import { pickShelfColor } from "@/lib/format/schedule";
 import { deadlines } from "./demo-data";
 import type { QuestionSet } from "@/lib/gemini/schema";
@@ -35,13 +36,15 @@ export default function Home() {
   const [savingShelf, setSavingShelf] = useState(false);
   const [courseMaterials, setCourseMaterials] = useState<Record<string, MaterialRow[]>>({});
   const [materialsState, setMaterialsState] = useState<LoadState>("loading");
+  const [courseQuestionSets, setCourseQuestionSets] = useState<Record<string, QuestionSetRow[]>>({});
+  const [questionSetsState, setQuestionSetsState] = useState<LoadState>("loading");
   const [assignments, setAssignments] = useState<Assignment[]>(deadlines);
   const [profile, setProfile] = useState<Profile>({ displayName: "ゆうた", faculty: "工学部", department: "情報工学科", email: "yuta@example.jp" });
   const [step, setStep] = useState(1);
   const [toast, setToast] = useState("");
   const [activeTab, setActiveTab] = useState<"material" | "quiz">("material");
   const [generating, setGenerating] = useState(false);
-  const [generatedQuiz, setGeneratedQuiz] = useState<QuestionSet | null>(null);
+  const [selectedQuestionSetId, setSelectedQuestionSetId] = useState<string | null>(null);
   // 操作結果を画面下部のトースト通知に渡す。
   const notify = (message: string) => setToast(message);
 
@@ -85,6 +88,21 @@ export default function Home() {
     [supabase],
   );
 
+  const loadQuestionSets = useCallback(
+    async (shelfId: string) => {
+      setQuestionSetsState("loading");
+      try {
+        const rows = await listQuestionSetsByShelf(supabase, shelfId);
+        setCourseQuestionSets((current) => ({ ...current, [shelfId]: rows }));
+        setQuestionSetsState("ready");
+      } catch (err) {
+        console.error(err);
+        setQuestionSetsState("error");
+      }
+    },
+    [supabase],
+  );
+
   // このデモではルーティングを使わず、viewの値で表示画面を切り替える。
   function navigate(next: View) {
     setView(next);
@@ -96,7 +114,12 @@ export default function Home() {
   function openCourse(id: string) {
     setSelectedShelfId(id);
     void loadMaterials(id);
+    void loadQuestionSets(id);
     navigate("course");
+  }
+
+  function openQuiz(id: string) {
+    setSelectedQuestionSetId(id);
   }
 
   function openShelves() {
@@ -121,18 +144,29 @@ export default function Home() {
     }
   }
 
-  // 問題作成フローを最初のステップから開く。
+  // 問題作成フローを最初のステップから開く。講義未選択なら棚選択を促す。
   function startCreate() {
+    if (!selectedShelf) {
+      openShelves();
+      notify("講義を選んでから問題をつくれます");
+      return;
+    }
     setStep(1);
     setGenerating(false);
     setModal("create");
   }
-  function finishGeneration(questionSet: QuestionSet) {
-    setGeneratedQuiz(questionSet);
+  function finishGeneration(questionSetId: string | null, questionSet: QuestionSet) {
+    setSelectedQuestionSetId(questionSetId);
     setModal("none");
     setGenerating(false);
     navigate("quiz");
-    notify(`${questionSet.questions.length}問の問題集を作成しました`);
+    if (selectedShelf) void loadQuestionSets(selectedShelf.id);
+    void loadShelves();
+    if (questionSetId) {
+      notify(`${questionSet.questions.length}問の問題集を作成しました`);
+    } else {
+      notify(`${questionSet.questions.length}問の問題集を作成しましたが、保存に失敗しました`);
+    }
   }
 
   return (
@@ -159,9 +193,12 @@ export default function Home() {
             shelf={selectedShelf}
             materials={courseMaterials[selectedShelf.id] ?? []}
             materialsState={materialsState}
+            questionSets={courseQuestionSets[selectedShelf.id] ?? []}
+            questionSetsState={questionSetsState}
             assignments={assignments.filter((assignment) => assignment.course === selectedShelf.course_name)}
             openShelves={openShelves}
             openMaterial={() => setModal("material")}
+            openQuiz={openQuiz}
             editCourse={() => setModal("shelf")}
             toggleShare={() => notify("共有はグループ画面から設定できます")}
             activeTab={activeTab}
@@ -175,7 +212,14 @@ export default function Home() {
         )}
         {/* 問題集：印刷やPDF保存に対応した問題用紙。 */}
         {view === "quiz" && (
-          <QuizView navigate={navigate} notify={notify} questionSet={generatedQuiz} />
+          <QuizView
+            supabase={supabase}
+            navigate={navigate}
+            notify={notify}
+            questionSetId={selectedQuestionSetId}
+            shelfName={selectedShelf?.course_name}
+            backToCourse={() => navigate("course")}
+          />
         )}
         {/* 課題：未完了と完了済みのタスクを一覧表示する。 */}
         {view === "tasks" && <TasksView notify={notify} items={assignments} setItems={setAssignments} courseNames={shelves.map((shelf) => shelf.course_name)} openCourse={(courseName) => { const shelf = shelves.find((item) => item.course_name === courseName); if (shelf) openCourse(shelf.id); }} />}
@@ -192,8 +236,10 @@ export default function Home() {
         {view === "logout" && <LogoutView navigate={navigate} />}
       </main>
       {/* 資料と出題条件を選択する、2段階の問題作成モーダル。 */}
-      {modal === "create" && (
+      {modal === "create" && selectedShelf && (
         <CreateQuizModal
+          supabase={supabase}
+          shelfId={selectedShelf.id}
           step={step}
           generating={generating}
           setStep={setStep}
@@ -217,9 +263,12 @@ export default function Home() {
       {modal === "material" && selectedShelf && (
         <MaterialModal
           onClose={() => setModal("none")}
-          onAdd={(name) => {
+          onUpload={async (file) => {
+            const material = await uploadMaterial(supabase, selectedShelf.id, file);
+            await loadMaterials(selectedShelf.id);
+            await loadShelves();
             setModal("none");
-            notify(`「${name}」は資料アップロード実装後に保存されます`);
+            notify(`「${material.file_name}」を追加しました`);
           }}
         />
       )}
