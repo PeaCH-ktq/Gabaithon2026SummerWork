@@ -1,11 +1,11 @@
 import type React from "react";
-import { courses, deadlines } from "../../demo-data";
-import type { Navigate, Notify } from "../../types";
+import { deadlines } from "../../demo-data";
+import type { Course, Navigate, Notify } from "../../types";
 import { Button, Icon } from "../ui";
 
-type Props = { navigate: Navigate; startCreate: () => void; notify: Notify };
+type Props = { courses: Course[]; navigate: Navigate; openCourse: (code: string) => void; startCreate: () => void; openShelf: () => void; notify: Notify };
 
-export function HomeView({ navigate, startCreate, notify }: Props) {
+export function HomeView({ courses, navigate, openCourse, startCreate, openShelf, notify }: Props) {
   return (
     <>
       <header className="page-head">
@@ -49,9 +49,7 @@ export function HomeView({ navigate, startCreate, notify }: Props) {
             <p className="eyebrow">MY COURSES</p>
             <h2>講義の棚</h2>
           </div>
-          <button className="text-link" onClick={() => navigate("course")}>
-            すべて見る <Icon name="arrow" size={15} />
-          </button>
+          <Button icon="plus" onClick={openShelf}>棚を追加</Button>
         </div>
         <div className="shelf-grid">
           {courses.map((course) => (
@@ -59,7 +57,7 @@ export function HomeView({ navigate, startCreate, notify }: Props) {
               key={course.code}
               className="shelf"
               style={{ "--tab": course.tab } as React.CSSProperties}
-              onClick={() => navigate("course")}
+              onClick={() => openCourse(course.code)}
             >
               <div className="shelf-top">
                 <span>{course.code}</span>

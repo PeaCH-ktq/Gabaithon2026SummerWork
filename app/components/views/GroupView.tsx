@@ -1,3 +1,5 @@
+"use client";
+import { useState } from "react";
 import { courses } from "../../demo-data";
 import type { Navigate, Notify } from "../../types";
 import { Button, Icon } from "../ui";
@@ -5,6 +7,8 @@ import { Button, Icon } from "../ui";
 type Props = { navigate: Navigate; notify: Notify; openSchedule: () => void };
 
 export function GroupView({ navigate, notify, openSchedule }: Props) {
+  const [inviteOpen, setInviteOpen] = useState(false);
+  const [hiddenShelves, setHiddenShelves] = useState<string[]>([]);
   return (
     <>
       <header className="group-hero">
@@ -20,11 +24,12 @@ export function GroupView({ navigate, notify, openSchedule }: Props) {
         <p>一緒なら、試験までの道のりも少し軽くなる。</p>
         <Button
           icon="share"
-          onClick={() => notify("招待リンクをコピーしました")}
+          onClick={() => setInviteOpen((value) => !value)}
         >
           招待する
         </Button>
       </header>
+      {inviteOpen && <section className="content-card invite-panel"><div><p className="eyebrow">INVITE CODE</p><h2>TANE-3Y7K</h2><p>このコードを友だちに共有してください。</p></div><Button primary onClick={() => { void navigator.clipboard?.writeText("TANE-3Y7K"); notify("招待コードをコピーしました"); }}>コードをコピー</Button></section>}
       <div className="group-grid">
         <section className="content-card meetings">
           <div className="card-head">
@@ -63,15 +68,7 @@ export function GroupView({ navigate, notify, openSchedule }: Props) {
                   {m.place} ・ 参加 {m.people}
                 </p>
               </div>
-              <Button
-                primary={i === 0}
-                icon="calendar"
-                onClick={() =>
-                  notify("Google カレンダー用の予定を書き出しました")
-                }
-              >
-                カレンダーへ
-              </Button>
+              <Button primary={i === 0} icon="calendar" onClick={() => notify("カレンダー連携はバックエンド接続後に利用できます")}>カレンダーへ</Button>
             </article>
           ))}
         </section>
@@ -82,10 +79,9 @@ export function GroupView({ navigate, notify, openSchedule }: Props) {
             講義資料そのものは共有されません。過去問などを共有する前に、再配布が許可されているか確認してください。
           </div>
           {courses.slice(0, 3).map((c) => (
-            <button
-              className="shared-shelf"
+            <div
+              className={`shared-shelf ${hiddenShelves.includes(c.code) ? "is-hidden" : ""}`}
               key={c.code}
-              onClick={() => navigate("course")}
             >
               <span style={{ background: c.tab }} />
               <div>
@@ -94,8 +90,9 @@ export function GroupView({ navigate, notify, openSchedule }: Props) {
                   問題集 {c.quizzes} ・ {c.shared ? "共有中" : "非表示"}
                 </small>
               </div>
-              <Icon name="arrow" />
-            </button>
+              <button aria-label={`${c.name}を開く`} onClick={() => navigate("course")}><Icon name="arrow" /></button>
+              <button className="visibility-toggle" onClick={() => setHiddenShelves((items) => items.includes(c.code) ? items.filter((code) => code !== c.code) : [...items, c.code])}>{hiddenShelves.includes(c.code) ? "表示" : "非表示"}</button>
+            </div>
           ))}
         </aside>
         <section className="content-card activity">

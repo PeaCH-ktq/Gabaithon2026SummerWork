@@ -1,9 +1,9 @@
 import type { Navigate, View } from "../types";
 import { Icon, type IconName } from "./ui";
 
-type Props = { view: View; navigate: Navigate };
+type Props = { view: View; navigate: Navigate; groupName: string };
 
-export function Sidebar({ view, navigate }: Props) {
+export function Sidebar({ view, navigate, groupName }: Props) {
   return (
     <aside className="sidebar">
       <button
@@ -42,7 +42,7 @@ export function Sidebar({ view, navigate }: Props) {
           onClick={() => navigate("group")}
         >
           <Icon name="users" />
-          <span>情報工学3年</span>
+          <span>{groupName}</span>
           <span className="online-dot" />
         </button>
       </nav>
@@ -52,7 +52,7 @@ export function Sidebar({ view, navigate }: Props) {
           <b>ゆうた</b>
           <small>工学部 情報工学科</small>
         </span>
-        <button aria-label="ユーザーメニュー">
+        <button aria-label="ユーザーメニュー" onClick={() => navigate("account")}>
           <Icon name="more" />
         </button>
       </div>

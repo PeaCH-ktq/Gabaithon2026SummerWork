@@ -104,3 +104,8 @@
   .meeting { align-items: flex-start; flex-wrap: wrap; }
   .meeting-date { width: 100%; }
 }
+
+.invite-panel { margin: -20px auto 28px; max-width: 720px; display: flex; justify-content: space-between; align-items: center; }
+.invite-panel h2 { letter-spacing: .12em; }
+.shared-shelf.is-hidden { opacity: .48; }
+.visibility-toggle { margin-left: 8px; padding: 5px 8px; border: 1px solid var(--line); border-radius: 7px; background: var(--paper); font-size: 10px; }
