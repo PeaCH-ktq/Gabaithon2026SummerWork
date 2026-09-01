@@ -1,4 +1,4 @@
-import type { Course, Navigate } from "../../types";
+import type { Assignment, Course, Navigate } from "../../types";
 import { Button, Icon } from "../ui";
 
 type Props = {
@@ -11,6 +11,8 @@ type Props = {
   openMaterial: () => void;
   editCourse: () => void;
   toggleShare: () => void;
+  assignments: Assignment[];
+  openShelves: () => void;
 };
 
 export function CourseView({
@@ -23,10 +25,12 @@ export function CourseView({
   openMaterial,
   editCourse,
   toggleShare,
+  assignments,
+  openShelves,
 }: Props) {
   return (
     <>
-      <button className="back-link" onClick={() => navigate("home")}>
+      <button className="back-link" onClick={openShelves}>
         ← 講義の棚
       </button>
       <header className="course-head">
@@ -47,6 +51,10 @@ export function CourseView({
           <p>グループに共有されるのは、共有を許可した問題集だけです。</p>
         </div>
       </div>
+      <section className="course-assignments">
+        <div className="card-head"><div><p className="eyebrow">ASSIGNMENTS</p><h2>この講義の課題</h2></div><Button icon="arrow" onClick={() => navigate("tasks")}>課題一覧へ</Button></div>
+        {assignments.length === 0 ? <div className="empty-state"><b>この講義の未完了課題はありません</b></div> : <div className="course-assignment-list">{assignments.map((assignment) => <button key={assignment.title} onClick={() => navigate("tasks")}><span className={`date-box ${assignment.color}`}><b>{assignment.left}</b><small>{assignment.date}</small></span><span><b>{assignment.title}</b><small>{assignment.course}</small></span><Icon name="arrow" size={15} /></button>)}</div>}
+      </section>
       <div className="tabs">
         <button
           className={activeTab === "material" ? "active" : ""}

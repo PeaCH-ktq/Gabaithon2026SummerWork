@@ -35,6 +35,8 @@
 .task-check.urgent { border-color: var(--coral); }
 .task-card>div:nth-child(2) { flex: 1; }
 .task-course { font-size: 9px; color: var(--indigo); font-weight: 700; }
+.task-card button.task-course { width: fit-content; border: 0; padding: 0; background: transparent; cursor: pointer; text-align: left; }
+.task-card button.task-course:hover { text-decoration: underline; }
 .task-card h3 { font-size: 13px; }
 .task-card p {
   font-size: 9px;
