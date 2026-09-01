@@ -16,8 +16,6 @@ export function HomeView({ courses, navigate, openCourse, startCreate, openShelf
       <header className="page-head">
         <div>
           <p className="today-date">{today}</p>
-          <h1>おかえりなさい、ゆうたさん。</h1>
-          <p>試験まで、あと少し。今日もひとつ進めよう。</p>
         </div>
         <Button primary icon="sparkle" onClick={startCreate}>
           問題をつくる
@@ -25,12 +23,12 @@ export function HomeView({ courses, navigate, openCourse, startCreate, openShelf
       </header>
       <section className="home-overview" aria-label="直近の予定">
         <article className="overview-card assignment-overview">
-          <div className="overview-head"><span className="overview-icon"><Icon name="task" /></span><div><p className="eyebrow">UPCOMING DEADLINES</p><h2>締切の近い課題</h2></div><button className="text-link" onClick={() => navigate("tasks")}>すべて見る <Icon name="arrow" size={14} /></button></div>
+          <div className="overview-head"><span className="overview-icon"><Icon name="task" /></span><div><p className="eyebrow">UPCOMING DEADLINES</p><h2>締切の近い課題</h2></div><button className="text-link overview-action" onClick={() => navigate("tasks")}>すべて見る <Icon name="arrow" size={14} /></button></div>
           <div className="overview-list">{deadlines.slice(0, 2).map((item) => <button key={item.title} onClick={() => navigate("tasks")}><span className={`date-box ${item.color}`}><b>{item.left}</b><small>{item.date}</small></span><span><b>{item.title}</b><small>{item.course}</small></span><Icon name="arrow" size={15} /></button>)}</div>
         </article>
         <article className="overview-card session-overview">
-          <div className="overview-head"><span className="overview-icon"><Icon name="users" /></span><div><p className="eyebrow">NEXT SESSIONS</p><h2>直近の勉強会</h2></div><button className="text-link" onClick={() => navigate("group")}>グループへ <Icon name="arrow" size={14} /></button></div>
-          <div className="overview-list">{nextSessions.map((session) => <button key={session.title} onClick={() => navigate("group")}><span className="session-date"><b>{session.date}</b><small>{session.time}</small></span><span><b>{session.title}</b><small><Icon name="home" size={11} />{session.place}</small></span><Icon name="arrow" size={15} /></button>)}</div>
+          <div className="overview-head"><span className="overview-icon"><Icon name="users" /></span><div><p className="eyebrow">NEXT SESSIONS</p><h2>直近の勉強会</h2></div><button className="text-link overview-action" onClick={() => navigate("group")}>グループへ <Icon name="arrow" size={14} /></button></div>
+          <div className="overview-list">{nextSessions.map((session) => <button key={session.title} onClick={() => navigate("group")}><span className="session-date"><b>{session.date}</b><small>{session.time}</small></span><span><b>{session.title}</b><small><Icon name="home" size={11} /><span>{session.place}</span></small></span><Icon name="arrow" size={15} /></button>)}</div>
         </article>
       </section>
       <section className="section">

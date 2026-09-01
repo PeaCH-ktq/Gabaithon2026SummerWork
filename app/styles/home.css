@@ -3,25 +3,30 @@
    今日の進捗、教材棚、締切一覧を表示するダッシュボード。
    ================================================================ */
 /* ホーム上部の「今日の学習」カード。背景の円は疑似要素で描画する。 */
-.today-date { margin-bottom: 8px; color: var(--indigo); font: 700 12px var(--font-display); }
-.home-overview { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
-.overview-card { border: 1px solid var(--line); border-radius: 18px; padding: 22px; background: var(--card); box-shadow: 0 5px 24px #28263708; }
+.today-date { color: var(--indigo); font: 700 22px/1.35 var(--font-display); letter-spacing: .02em; }
+.home-overview { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 16px; }
+.overview-card { min-width: 0; border: 1px solid var(--line); border-radius: 18px; padding: 22px; background: var(--card); box-shadow: 0 5px 24px #28263708; }
 .assignment-overview { background: linear-gradient(135deg,#fff,#fff8f5); }
 .session-overview { background: linear-gradient(135deg,#fff,#f5f7ff); }
-.overview-head { display: flex; align-items: center; gap: 11px; margin-bottom: 16px; }
-.overview-head>div { flex: 1; }
+.overview-head { display: grid; grid-template-columns: 38px minmax(0,1fr); column-gap: 11px; row-gap: 6px; align-items: center; margin-bottom: 16px; }
+.overview-head>div { min-width: 0; }
+.overview-head h2,.overview-head .eyebrow { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .overview-head h2 { font-size: 18px; }
 .overview-head .eyebrow { margin: 0; }
-.overview-icon { width: 38px; height: 38px; display: grid; place-items: center; border-radius: 11px; color: var(--indigo); background: var(--soft); }
+.overview-action { grid-column: 1 / -1; justify-self: end; white-space: nowrap; }
+.overview-icon { flex: 0 0 38px; width: 38px; height: 38px; display: grid; place-items: center; border-radius: 11px; color: var(--indigo); background: var(--soft); }
 .assignment-overview .overview-icon { color: #b85c4e; background: #fff0ed; }
 .overview-list { display: grid; gap: 8px; }
-.overview-list>button { width: 100%; border: 1px solid #ebe9e3; border-radius: 11px; background: #ffffffb8; padding: 9px; display: flex; align-items: center; gap: 10px; text-align: left; }
+.overview-list>button { min-width: 0; width: 100%; border: 1px solid #ebe9e3; border-radius: 11px; background: #ffffffb8; padding: 9px; display: flex; align-items: center; gap: 10px; text-align: left; overflow: hidden; }
 .overview-list>button:hover { border-color: #c9cce9; transform: translateY(-1px); }
 .overview-list>button>span:nth-child(2) { min-width: 0; flex: 1; display: flex; flex-direction: column; }
 .overview-list>button>span:nth-child(2)>b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; }
-.overview-list>button>span:nth-child(2)>small { display: flex; align-items: center; gap: 3px; color: var(--muted); font-size: 9px; }
-.overview-list>button>svg { color: var(--muted); }
-.session-date { min-width: 96px; display: flex; flex-direction: column; padding: 7px 9px; border-radius: 9px; background: var(--soft); }
+.overview-list>button>span:nth-child(2)>small { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: flex; align-items: center; gap: 3px; color: var(--muted); font-size: 9px; }
+.overview-list>button>span:nth-child(2)>small>span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.overview-list>button>svg { flex: 0 0 auto; color: var(--muted); }
+.overview-list>button>.date-box,.session-date { flex: 0 0 96px; min-width: 0; }
+.overview-list>button>.date-box b,.overview-list>button>.date-box small,.session-date b,.session-date small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.session-date { display: flex; flex-direction: column; padding: 7px 9px; border-radius: 9px; background: var(--soft); }
 .session-date b { color: var(--indigo); font-size: 10px; }
 .session-date small { color: var(--muted); font-size: 8px; }
 .focus-card {
@@ -200,6 +205,11 @@
 @media (max-width:1050px) {
   .shelf-grid { grid-template-columns: repeat(2,1fr); }
   .deadline-list { grid-template-columns: 1fr; }
+}
+
+/* サイドバー表示時はメイン領域が先に狭くなるため、画面幅に合わせて予定カードを縦に並べる。 */
+@media (max-width:880px) {
+  .home-overview { grid-template-columns: 1fr; }
 }
 
 @media (max-width:720px) {
