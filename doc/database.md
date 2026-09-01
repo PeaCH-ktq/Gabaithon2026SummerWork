@@ -216,8 +216,11 @@ $$;
 ## Storage
 
 - バケット `materials`（**private**）。
+  [`supabase/migrations/20260901100630_storage.sql`](../supabase/migrations/20260901100630_storage.sql)
+  で作成済み・適用済み（後述「現状の進捗」参照）。
 - パス規則: `{user_id}/{material_id}/{file_name}`。
-- Storage ポリシー: `(storage.foldername(name))[1] = auth.uid()::text` の本人のみ。
+- Storage ポリシー: `(storage.foldername(name))[1] = auth.uid()::text` の本人のみ
+  （`materials_storage_own`、[`0002_rls.sql`](../supabase/migrations/0002_rls.sql) で定義済み）。
 - **アップロードはブラウザから anon キー＋RLS で直接** Storage へ行う（署名付き URL は不要）。
   クライアントで `crypto.randomUUID()` で `material_id` を採番し、パスとして使用。
   アップロード完了後に `materials` テーブルへ行を insert する。
@@ -244,6 +247,10 @@ Google ログイン時、Calendar への書き込み権限（`calendar.events` �
 - [`supabase/migrations/0001_init.sql`](../supabase/migrations/0001_init.sql) と
   [`0002_rls.sql`](../supabase/migrations/0002_rls.sql) は実際の Supabase プロジェクトに
   適用済み（`supabase db push` で反映、差分なしを確認済み）。
+- [`supabase/migrations/20260901100630_storage.sql`](../supabase/migrations/20260901100630_storage.sql)
+  も適用済み。`materials` バケット（private）を作成した。Supabase MCP の `apply_migration`
+  経由で適用したため、ファイル名は CLI 互換のタイムスタンプ版バージョン
+  （`0003` ではなく `20260901100630`）になっている。以降のマイグレーションもこの形式に合わせること。
 - Supabase クライアントの scaffolding は実装済み・動作確認済み:
   [`lib/supabase/client.ts`](../lib/supabase/client.ts)（ブラウザ用）、
   [`lib/supabase/server.ts`](../lib/supabase/server.ts)（Server Component / Route Handler 用、
@@ -300,8 +307,8 @@ Google ログイン時、Calendar への書き込み権限（`calendar.events` �
 | --- | --- | --- | --- |
 | `GET /auth/callback` | 既実装（未コミット） | service-role | Google OAuth コールバック処理 |
 | `POST /api/questions/generate` | 要改修 | `GEMINI_API_KEY` | 資料から問題生成、保存済み問題集を返す |
-| `POST /api/calendar/events` | 未着手 | refresh token + Google Calendar API | 勉強予定を Google Calendar へ書き込み |
-| `DELETE /api/calendar/events/[id]` | 未着手 | refresh token + Google Calendar API | 予定をキャンセル |
+| `POST /api/calendar/events` | 実装済み | refresh token + Google Calendar API | 勉強予定を**グループ全員**の Google Calendar へ書き込み |
+| `DELETE /api/calendar/events/[id]` | 実装済み（`[id]` = `study_session_id`） | refresh token + Google Calendar API | 予定のカレンダー反映を全員ぶん取り消し |
 
 ### フロントエンド（FE）が `supabase-js` で直接叩いてよいテーブル
 
@@ -348,16 +355,21 @@ RLS と型定義が BE から提供されるため、**認可・検証ロジッ�
 
 ### 2. `materials` Storage バケット作成（BE）
 
-**対応**: マイグレーション SQL で作成する。
+**対応**: 完了。マイグレーション SQL で作成・適用済み。
 
-- `supabase/migrations/0003_storage.sql` を新規作成し、以下を実行:
+- [`supabase/migrations/20260901100630_storage.sql`](../supabase/migrations/20260901100630_storage.sql):
   ```sql
-  insert into storage.buckets (id, name, public) 
-  values ('materials', 'materials', false);
+  insert into storage.buckets (id, name, public)
+  values ('materials', 'materials', false)
+  on conflict (id) do nothing;
   ```
-  （ダッシュボード手作業より再現性が高く、`supabase db push` に載る）
+- Supabase MCP の `apply_migration` で本番プロジェクトへ適用済み
+  （`list_migrations` に `20260901100630 storage` として登録、
+  `storage.buckets` に `materials`（`public = false`）が存在することを確認済み）。
+- `storage.objects` の本人限定ポリシー `materials_storage_own` は
+  [`0002_rls.sql`](../supabase/migrations/0002_rls.sql) で適用済みのため追加不要。
 
-**完了条件**: フロント側がブラウザから `supabase.storage.from("materials").upload()` を呼べる。
+**完了条件**: 達成。フロント側がブラウザから `supabase.storage.from("materials").upload()` を呼べる。
 [Storage 節](#storage)に記載のパス規則 `{user_id}/{material_id}/{file_name}` を守ること。
 
 **FE タスク**:
@@ -388,18 +400,33 @@ RLS と型定義が BE から提供されるため、**認可・検証ロジッ�
 
 ### 4. Google Calendar 連携（BE）
 
-**対応**: 2 つの Route Handler を実装。
+**対応**: 完了。2 つの Route Handler を実装。Google API は依存追加せず raw `fetch`
+（[`lib/google/calendar.ts`](../lib/google/calendar.ts) が
+`oauth2.googleapis.com/token` と Calendar REST を直接叩く。
+オーケストレーションは [`lib/google/calendarSync.ts`](../lib/google/calendarSync.ts)）。
+`GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` をサーバー側でも読むようになった（`.env.example` 更新済み）。
 
-- `POST /api/calendar/events`
+- [`POST /api/calendar/events`](../app/api/calendar/events/route.ts)
   - ペイロード: `{ study_session_id: string }`
-  - 動作: `google_credentials` から refresh token を取得 → Google Calendar API で イベント作成
-  - 返り値: `{ event_id: string }` + `calendar_events.insert()` で DB に行追加
-- `DELETE /api/calendar/events/[id]`
-  - パラメータ: Google Calendar のイベント ID
-  - 動作: Calendar API でイベント削除 + DB から `calendar_events` 行を削除
+  - 認可: グループメンバーであること（`study_sessions` の RLS 通過）のみ
+  - 動作: グループメンバー全員の `google_credentials` を引き、refresh token があるメンバーの
+    Google カレンダーへイベント作成 → `calendar_events` に 1 メンバー 1 行 insert
+    （`unique (study_session_id, user_id)`。既に行があるメンバーは再作成しない）
+  - 返り値:
+    ```json
+    { "created": [{ "user_id": "…", "event_id": "…" }],
+      "skipped": [{ "user_id": "…", "reason": "no_credentials" | "already_synced" }],
+      "failed":  [{ "user_id": "…", "error": "…", "reauth_required": true }] }
+    ```
+- [`DELETE /api/calendar/events/[id]`](../app/api/calendar/events/[id]/route.ts)
+  - パラメータ `[id]`: **`study_session_id`**（全員書き込みと対称にするため。Google イベント ID ではない）
+  - 認可: 同上
+  - 動作: その予定の `calendar_events` 全行をループし、各メンバーの Google イベントを削除 + 行削除。
+    **`study_sessions` 行そのものは消さない**（予定レコード削除は FE の責務）
+  - 返り値: `{ deleted: ["user_id", …], failed: [{ user_id, error, reauth_required? }] }`
 
-**完了条件**: フロント側が `study_sessions` 作成後に上記エンドポイントを呼ぶだけで、
-ユーザーの Google Calendar に自動書き込みされる。
+**完了条件**: 達成。フロント側が `study_sessions` 作成後に `POST /api/calendar/events` を
+呼ぶだけで、グループメンバー全員（Google 連携済みの人）のカレンダーへ書き込まれる。
 
 **FE タスク**:
 - 勉強予定作成画面（`title` / `location` / `starts_at` / `ends_at`）
