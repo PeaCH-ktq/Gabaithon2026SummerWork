@@ -142,7 +142,7 @@ AI をゴリゴリ活かしたい（無料枠だと Gemini API）。
     `components/Figure.tsx` が **KaTeX で描画して SVG の上に絶対配置で重ねる** → `y = x^2` や `\frac` も本文と同じ体裁で表示される
   - サーバー側 `lib/svg/validateSvg.ts` で SVG を検証（怪しければ図ごと破棄し問題文は残す）、
     描画直前に `components/Figure.tsx` が DOMPurify で再サニタイズ
-- 問題用紙は `components/QuestionPaper.tsx` が A4 固定テンプレートに差し込む。`@page` 余白＋`@media print`（`app/globals.css`）で複数ページに流して印刷される
+- 問題用紙は `components/QuestionPaper.tsx` が A4 固定テンプレートに差し込む。`@page` 余白＋`@media print`（`app/styles/paper.css`）で複数ページに流して印刷される
 
 ### モデルとコスト
 

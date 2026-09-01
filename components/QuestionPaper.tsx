@@ -22,10 +22,10 @@ export function QuestionPaper({ questionSet }: { questionSet: QuestionSet }) {
 
         <ol className="flex flex-1 flex-col gap-8">
           {questionSet.questions.map((q, i) => (
-            <li key={i} className="flex flex-col gap-3 break-inside-avoid">
-              <div className="flex gap-2 text-[15px] leading-relaxed">
+            <li key={i} className="flex min-w-0 flex-col gap-3 break-inside-avoid">
+              <div className="flex min-w-0 gap-2 text-[15px] leading-relaxed">
                 <span className="font-bold whitespace-nowrap">問 {i + 1}.</span>
-                <MathText text={q.prompt} className="flex-1" />
+                <MathText text={q.prompt} className="min-w-0 flex-1" />
               </div>
               {q.figure && <Figure figure={q.figure} index={i + 1} />}
               <div

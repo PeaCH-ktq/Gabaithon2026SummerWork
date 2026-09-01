@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Noto_Sans_JP, Outfit } from "next/font/google";
+import "katex/dist/katex.min.css";
 import "./globals.css";
 
 const noto = Noto_Sans_JP({ variable: "--font-jp", subsets: ["latin"], weight: ["400", "500", "600", "700", "800"] });
