@@ -1,0 +1,90 @@
+/* ================================================================
+   7. Question paper (問題用紙)
+   生成された問題を A4 用紙として描画する。図（SVG＋KaTeXラベル）と
+   画面幅に収まらないときの縮小表示、印刷時のページ設定を扱う。
+   ================================================================ */
+
+/* --- 問題用紙（A4 = 210mm x 297mm） --- */
+.question-paper {
+  width: 210mm;
+  min-height: 297mm;
+  box-sizing: border-box;
+  /* 画面幅が用紙の実寸（210mm ≒ 793.7px）に満たないとき、.main のサイドバー・
+     余白を差し引いた実際の表示幅に合わせて縮小する。`zoom` はレイアウトの
+     ボックスサイズごと縮めるため、`transform: scale()` と違って下に余白が
+     残らない。印刷時は @media print で 1 に戻す。 */
+  --paper-fit: clamp(0.4, calc((100vw - 230px - 112px) / 793.7px), 1);
+  zoom: var(--paper-fit);
+}
+
+@media (max-width: 1050px) {
+  .question-paper {
+    --paper-fit: clamp(0.4, calc((100vw - 230px - 64px) / 793.7px), 1);
+  }
+}
+
+@media (max-width: 720px) {
+  .question-paper {
+    /* この幅ではサイドバーが下部ナビになり margin-left は 0 になる（base.css）。 */
+    --paper-fit: clamp(0.4, calc((100vw - 36px) / 793.7px), 1);
+  }
+}
+
+/* KaTeX の桁あふれ対策。長い数式は用紙内で横スクロールに逃がす。 */
+.question-paper .katex-display {
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+.question-paper .katex {
+  max-width: 100%;
+}
+
+/* 図（インライン SVG ＋ KaTeX ラベル overlay） */
+.figure {
+  max-width: 110mm;
+  margin: 0 auto;
+  break-inside: avoid;
+}
+.figure-canvas {
+  position: relative;
+  width: 100%;
+}
+.figure-body {
+  position: absolute;
+  inset: 0;
+}
+.figure-body svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+.figure-label {
+  position: absolute;
+  font-size: 13px;
+  line-height: 1;
+  white-space: nowrap;
+  background: rgba(255, 255, 255, 0.85);
+  padding: 0 2px;
+}
+.figure-label .katex {
+  font-size: 1em;
+}
+
+/* 印刷時は @page に余白を持たせ、問題用紙は通常フローで複数ページに流す。
+   画面用 UI には print:hidden が付いているのでここでは隠さない。 */
+@page {
+  size: A4;
+  margin: 18mm;
+}
+
+@media print {
+  .question-paper {
+    width: auto;
+    min-height: 0;
+    box-shadow: none;
+    zoom: 1;
+  }
+  .question-paper li {
+    break-inside: avoid;
+  }
+}

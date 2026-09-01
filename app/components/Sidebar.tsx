@@ -3,9 +3,9 @@ import Link from "next/link";
 import type { Navigate, View } from "../types";
 import { Icon, type IconName } from "./ui";
 
-type Props = { view: View; navigate: Navigate };
+type Props = { view: View; navigate: Navigate; groupName: string };
 
-export function Sidebar({ view, navigate }: Props) {
+export function Sidebar({ view, navigate, groupName }: Props) {
   return (
     <aside className="sidebar">
       <button
@@ -44,8 +44,13 @@ export function Sidebar({ view, navigate }: Props) {
           onClick={() => navigate("group")}
         >
           <Icon name="users" />
-          <span>情報工学3年</span>
+          <span>{groupName}</span>
           <span className="online-dot" />
+        </button>
+        <span className="nav-label second">ACCOUNT</span>
+        <button className={`nav-item ${view === "account" ? "active" : ""}`} onClick={() => navigate("account")}>
+          <Icon name="users" />
+          <span>アカウント</span>
         </button>
       </nav>
       <div className="sidebar-foot">

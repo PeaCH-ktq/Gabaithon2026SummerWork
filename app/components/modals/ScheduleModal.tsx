@@ -30,10 +30,11 @@ export function ScheduleModal({ onClose, notify }: Props) {
             <input type="date" defaultValue="2026-09-06" />
           </label>
           <label className="text-field">
-            時刻
+            開始時刻
             <input type="time" defaultValue="14:00" />
           </label>
         </div>
+        <label className="text-field">終了時刻<input type="time" defaultValue="18:00" /></label>
         <label className="text-field">
           場所
           <input defaultValue="中央図書館 グループ学習室B" />

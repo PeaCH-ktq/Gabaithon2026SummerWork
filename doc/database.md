@@ -189,6 +189,13 @@ $$;
 
 全てのグループ関連ポリシーはこの関数を経由する。
 
+同じ理由で、`question_sets` ⟷ `question_set_shares` の相互参照も再帰する
+（`question_sets_select` が `question_set_shares` を、`question_set_shares_select` が
+`question_sets` を参照）。`question_set_shares` 側の所有者判定を
+`owns_question_set(qs_id uuid)`（SECURITY DEFINER）に逃がして依存を断ち切る。
+[`20260901133538_fix_question_set_shares_recursion.sql`](../supabase/migrations/20260901133538_fix_question_set_shares_recursion.sql)
+で修正済み（`0002_rls.sql` 自体は歴史的経緯でそのまま）。
+
 ### グループ参加はポリシーではなく関数で制御
 
 「招待コードを知っている人だけが参加できる」は RLS だけでは表現できないため、
@@ -203,15 +210,19 @@ $$;
 | materials | `owner_id = auth.uid()` のみ | 本人のみ |
 | shelves | 本人、または `shelf_shares` 経由で `is_group_member` かつ `visible = true` | 本人のみ |
 | question_sets | 本人、または `question_set_shares` 経由で `is_group_member` | 本人のみ |
-| question_set_shares | 対象問題集の所有者 | 対象問題集の所有者 |
+| question_set_shares | `is_group_member` または `owns_question_set`（SECURITY DEFINER。再帰回避） | `owns_question_set` |
 | groups | `is_group_member(id)` | 作成は誰でも可、更新・削除は `role = 'owner'` |
 | group_members | `is_group_member(group_id)` | `join_group_by_code` 経由のみ insert、脱退は本人 |
 | shelf_shares | `is_group_member(group_id)` | 対象棚の所有者 |
 | study_sessions | `is_group_member(group_id)` | 作成はメンバー、更新・削除は作成者 |
 | assignments | `is_group_member(group_id)`、または `shelf_id` の所有者 | 作成はメンバー、更新・削除は作成者 |
-| assignment_reports | 対象課題のグループの `is_group_member` | 本人の行のみ |
-| google_credentials | ポリシー無し（全拒否） | サーバー（service-role）のみ |
-| calendar_events | 本人 | サーバーのみ |
+| assignment_reports | 対象課題のグループの `is_group_member`（`group_id` が非 NULL の課題のみ） | 本人の行のみ |
+| google_credentials | **ポリシー無し（全拒否）** | サーバー（service-role）のみ |
+| calendar_events | **ポリシー無し（全拒否）** | サーバー（service-role）のみ |
+
+> `google_credentials` / `calendar_events` は [`0002_rls.sql`](../supabase/migrations/0002_rls.sql) で
+> `enable row level security` だけ行い、ポリシーを 1 つも作っていない（= 全クライアントアクセス拒否）。
+> 読み書きは admin クライアント経由のサーバーコードからのみ。
 
 ## Storage
 
@@ -230,14 +241,16 @@ $$;
 
 ## 必要な環境変数
 
-`.env.example` に以下を追加する予定（Supabase プロジェクト作成後に値を埋める）。
+[`.env.example`](../.env.example) に記載済み（値は `.env.local` に設定済み・gitignore）。
 
 | 変数 | 説明 |
 | --- | --- |
 | `NEXT_PUBLIC_SUPABASE_URL` | プロジェクト URL |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | anon キー（クライアントで使用、RLS 前提） |
 | `SUPABASE_SERVICE_ROLE_KEY` | service-role キー（サーバー専用。`google_credentials` などの操作に使用） |
-| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | Google OAuth（ログイン＋カレンダー書き込み用） |
+| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | Google OAuth（ログイン＋カレンダー書き込み用。サーバー側でも読む） |
+| `GEMINI_API_KEY` | 問題生成 API 用 |
+| `GEMINI_MODEL` / `GEMINI_FALLBACK_MODEL` | 任意。既定は [`lib/gemini/config.ts`](../lib/gemini/config.ts)（`gemini-3.6-flash` / `gemini-2.5-flash`） |
 
 Google ログイン時、Calendar への書き込み権限（`calendar.events` スコープ）と
 `access_type=offline` + `prompt=consent` を要求しないと refresh token が取得できない点に注意。
@@ -268,209 +281,248 @@ Google ログイン時、Calendar への書き込み権限（`calendar.events` �
     `provider_refresh_token` を `google_credentials` へ upsert 済み。オープンリダイレクト対策あり。
   - `.env.example` に `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` の注記を追加済み
     （値はアプリから読まれず Supabase ダッシュボードに設定するもの）。
-  - **残りはダッシュボード側の設定作業のみ**（タスク「Google ログインの設定」参照）。
+  - `app/auth/callback/route.ts` はコミット済み（`6058e7e`）。
+  - **残りはダッシュボード側の設定作業のみ**（「完了済み」節参照）。
+- 問題生成 API は `materialId` 受け取りに改修済み。ただし
+  **生成結果を `question_sets` に保存する処理は未実装**（レスポンスで `{ questionSet }` を返すのみ）。
+  → 今後のタスク 5 で対応。
 
-## 担当範囲（BE / FE）
+## 既知の不整合・落とし穴（実装前に読む）
 
-バックエンド（BE）とフロントエンド（FE）の担当を以下のように分ける。
+FE 調査で判明した、実装時に踏むと詰まる箇所。
 
-### 基本原則: RLS 直叩き ＋ 必要な所だけ API
+1. ~~**グループ作成者が自分のグループを見られない**~~
+   → **解消済み**（タスク 1）。`20260901131709_ui_alignment.sql` の `on_group_created` トリガー
+   （`handle_new_group`, security definer）が insert 直後に owner 行を入れる。
 
-単純な CRUD（`shelves` / `materials` / `question_sets` / `groups` 等の作成・編集・削除・一覧）は
-**フロント側が `supabase-js` でブラウザから直接叩き、RLS が認可を保証する**。
-`supabase/migrations/0002_rls.sql` は元々この前提で全テーブルにポリシーが書かれており、
-追加実装が最小で済む。
+2. **`POST /api/questions/generate` の `file` ブランチが未認証で通る**
+   [`proxy.ts`](../proxy.ts) が `/api/*` を除外しているため。`materialId` ブランチだけが
+   `getUser()` を通る（[`app/api/questions/generate/route.ts`](../app/api/questions/generate/route.ts) の `materialFromDatabase`）。
+   → タスク 5 で `file` ブランチにも認証を入れる。
 
-バックエンドが Route Handler を提供するのは、以下のいずれかに該当する場合**のみ**:
+3. ~~**`lib/supabase/types.ts` の `Functions` が `Record<string, never>`**~~
+   → **解消済み**（タスク 1）。`Functions` に `is_group_member` / `join_group_by_code` を手書き追加。
 
-1. **サーバー専用の秘密が要る**: `GEMINI_API_KEY` / service-role キー / Google の refresh token
+4. **`google_credentials.updated_at` が再ログインで更新されない**
+   [`app/auth/callback/route.ts`](../app/auth/callback/route.ts) の upsert が `updated_at` を書いていない。
+   自動更新トリガーも無い。実害は小さいが将来のトークン鮮度判定に注意。
+
+5. **問題モデルが二重に存在する**
+   [`app/demo-data.ts`](../app/demo-data.ts) の `questions`（`{ type, text, options }`）と
+   [`lib/gemini/schema.ts`](../lib/gemini/schema.ts) の `QuestionSet`
+   （`{ title, questions[].prompt / figure / answer / explanation }`）は別物。
+   実データ化の際にデモ側（`questions` / `materials` / `deadlines` / `courses`）を捨てる。
+
+6. **UI の `Course` 型と `shelves` テーブルがほぼ重ならない**
+   [`app/types.ts`](../app/types.ts) の `Course`（`code / professor / room / tab / docs / quizzes / shared`）
+   に対し `shelves` は `course_name / year / term / day_of_week / period`。
+   → タスク 1 で `shelves` に `course_code` / `professor` / `room` / `color` を追加済み。
+   タスク 2 で `Shelf` 型（`ShelfRow` ＋ 件数）を追加。`Course` の削除と差し替えはタスク 3。
+   `schedule` 文字列は [`lib/format/schedule.ts`](../lib/format/schedule.ts) の
+   `formatSchedule(day_of_week, period)` で組み立てる（逆パーサは作らない。入力は `<select>`）。
+
+7. **共有された棚の件数表示に注意**（`lib/data/shelves.ts:listShelves`）
+   `materials_all_own` により、他人から共有された棚の `materialCount` は必ず 0 になる
+   （講義資料は共有しない設計なので正しい）。`sharedGroupIds` には
+   `shelf_shares_select`（`is_group_member`）の都合で「自分が所属するグループへの共有」だけが載る。
+
+## 開発方針
+
+BE / FE は分けず、一貫して開発する。以下は残す技術判断。
+
+### 原則: RLS 直叩き ＋ 必要な所だけ Route Handler
+
+単純な CRUD（`shelves` / `materials` / `question_sets` / `groups` / `study_sessions` /
+`shelf_shares` / `question_set_shares` / `profiles` 等）は
+**ブラウザから `supabase-js` で直接叩き、RLS が認可を保証する**。
+[`0002_rls.sql`](../supabase/migrations/0002_rls.sql) は全テーブルにポリシー済み。
+
+Route Handler を置くのは以下のいずれかに該当する場合**のみ**:
+
+1. **サーバー専用の秘密が要る**: `GEMINI_API_KEY` / service-role キー / Google refresh token
 2. **RLS だけでは表現できない認可**: 招待コードでの参加（`join_group_by_code` RPC で解決済み）
 3. **外部 API を叩く**: Gemini / Google Calendar
 
-### バックエンド（BE）の成果物
+### 共通データアクセス層 `lib/data/`
 
-- データベース: マイグレーション SQL（[supabase/migrations/](../supabase/migrations/)）
-- RLS・Storage ポリシー: 認可ロジック（[0001_init.sql](../supabase/migrations/0001_init.sql) / 
-  [0002_rls.sql](../supabase/migrations/0002_rls.sql)）
-- Storage バケット `materials` の作成
-- **型定義** [`lib/supabase/types.ts`](../lib/supabase/types.ts) —
-  フロント・バック両者の契約（TypeScript で静的に型チェックできるように）
-- クライアント scaffolding: [`lib/supabase/client.ts`](../lib/supabase/client.ts) /
-  [`lib/supabase/server.ts`](../lib/supabase/server.ts) / [`lib/supabase/admin.ts`](../lib/supabase/admin.ts)
-- **クライアント用ヘルパー** [`lib/supabase/auth.ts`](../lib/supabase/auth.ts) —
-  `signInWithGoogle()` が唯一のクライアント公開関数
-- Route Handler（下記参照）
+各画面が生クエリを散らすと重複するため、テーブル単位で
+`lib/data/{shelves,materials,questionSets,groups,studySessions,shares}.ts` に集約する。
+戻り値は [`lib/supabase/types.ts`](../lib/supabase/types.ts) の `Row` 型をそのまま UI へ流す
+（UI 独自の型 `app/types.ts:Course` は廃止）。
 
-### バックエンド提供の Route Handler
+### Route Handler 一覧（現状）
 
 | エンドポイント | 状態 | 要件 | 用途 |
 | --- | --- | --- | --- |
-| `GET /auth/callback` | 既実装（未コミット） | service-role | Google OAuth コールバック処理 |
-| `POST /api/questions/generate` | 要改修 | `GEMINI_API_KEY` | 資料から問題生成、保存済み問題集を返す |
-| `POST /api/calendar/events` | 実装済み | refresh token + Google Calendar API | 勉強予定を**グループ全員**の Google Calendar へ書き込み |
-| `DELETE /api/calendar/events/[id]` | 実装済み（`[id]` = `study_session_id`） | refresh token + Google Calendar API | 予定のカレンダー反映を全員ぶん取り消し |
+| `GET /auth/callback` | 実装済み・コミット済み | service-role | Google OAuth コールバック（`google_credentials` upsert） |
+| `GET /api/materials` | 実装済み | セッション | 自分の資料一覧（`CreateQuizModal` が使用） |
+| `POST /api/questions/generate` | `materialId` 対応済み。**`question_sets` 保存は未実装** | `GEMINI_API_KEY` | 資料から問題生成 |
+| `POST /api/calendar/events` | 実装済み・**UI 未接続** | refresh token + Calendar API | 勉強予定をグループ全員の Google Calendar へ |
+| `DELETE /api/calendar/events/[id]` | 実装済み・**UI 未接続**（`[id]` = `study_session_id`） | refresh token + Calendar API | 上記の全員ぶん取り消し |
 
-### フロントエンド（FE）が `supabase-js` で直接叩いてよいテーブル
+`POST /api/questions/generate` の詳細ペイロード/エラーは既存実装
+（`multipart/form-data`、`file` か `materialId` の排他、`extraInstruction` ≤1000 字、
+429 / 503+`Retry-After` / 502）を参照。カレンダー API の返り値形は:
 
-RLS ポリシーが認可を保証するため、以下のテーブル・Storage は**自由に CRUD できる**：
-
-- `shelves` —作成・編集・削除・一覧（本人 / 共有先グループメンバー）
-- `materials` —作成・削除・一覧（本人のみ。所有者以外には見えない）
-- `question_sets` —作成・編集・削除・一覧（本人 / 共有先グループメンバー）
-- `groups` —作成・一覧・編集・削除（メンバーのみが見える、owner のみ編集可）
-- `group_members` —一覧・削除（参加は `join_group_by_code` RPC のみ）
-- `shelf_shares` / `question_set_shares` —作成・削除・一覧（所有者のみ）
-- `study_sessions` —作成・編集・削除・一覧（グループメンバーのみ）
-- `assignments` / `assignment_reports` —作成・編集・削除・一覧（権限に応じて）
-- `profiles` —一覧・編集（自分の行のみ編集可、表示名・アイコン URL など）
-- Storage バケット `materials` —アップロード・ダウンロード・削除（本人のみ。RLS で守られている）
-
-### フロントエンド（FE）の成果物
-
-本ドキュメントで「FE」と書かれたタスク（UI実装、画面遷移、`supabase-js` 呼び出し等）。
-RLS と型定義が BE から提供されるため、**認可・検証ロジックの実装は不要**。
+```json
+{ "created": [{ "user_id": "…", "event_id": "…" }],
+  "skipped": [{ "user_id": "…", "reason": "no_credentials" | "already_synced" }],
+  "failed":  [{ "user_id": "…", "error": "…", "reauth_required": true }] }
+```
 
 ## 今後のタスク
 
-### 1. Google ログインの設定（BE）
+デモ導線（**ログイン → 棚 → 資料アップロード → 問題生成 → 保存 → グループ共有 → 勉強会カレンダー**）
+が通る順に並べる。各タスクは「対象 / やること / 完了条件」。
 
-**対応**: コード側は完了。ダッシュボード設定のみ。
+### 完了済み（コード側）
 
-- Supabase ダッシュボード（Authentication > Providers > Google）で Google OAuth を有効化
-- Google Cloud Console 側で OAuth クライアントを作成し、`calendar.events` スコープを追加
-- `.env.local` に `GOOGLE_CLIENT_ID` と `GOOGLE_CLIENT_SECRET` を設定
+- **Google ログイン**: [`lib/supabase/auth.ts`](../lib/supabase/auth.ts)（`signInWithGoogle` / `signOut`）、
+  [`app/login/page.tsx`](../app/login/page.tsx)、[`app/logout/page.tsx`](../app/logout/page.tsx)、
+  [`app/auth/callback/route.ts`](../app/auth/callback/route.ts)、[`proxy.ts`](../proxy.ts)。
+  残りは Supabase / Google Cloud のダッシュボード設定のみ。
+- **`materials` Storage バケット**（private）: [`20260901100630_storage.sql`](../supabase/migrations/20260901100630_storage.sql) 適用済み。
+- **Google Calendar Route Handler 2 本**: 実装済み（UI 未接続。タスク 7 で接続）。
+- **Supabase クライアント scaffolding**: `lib/supabase/{client,server,admin,types}.ts`。
+- **タスク 1（スキーマ差分）**: [`20260901131709_ui_alignment.sql`](../supabase/migrations/20260901131709_ui_alignment.sql)
+  を MCP `apply_migration` で本番へ適用済み。`shelves` に `course_code` / `professor` /
+  `room` / `color`（default `#5866c5`）を追加。`on_group_created` / `handle_new_group`
+  トリガーで作成者を owner として `group_members` へ入れる（落とし穴 1 の解消）。
+  [`lib/supabase/types.ts`](../lib/supabase/types.ts) の `shelves` 型と `Functions`
+  （`is_group_member` / `join_group_by_code`）を手書き追随。
+- **タスク 2（型・データアクセス層）**:
+  - [`app/types.ts`](../app/types.ts) に `ShelfRow` / `Shelf`（= `ShelfRow` ＋ `materialCount` /
+    `questionSetCount` / `sharedGroupIds`）を追加。`Course` は `@deprecated` 付きで残置（削除はタスク 3）。
+  - [`lib/format/schedule.ts`](../lib/format/schedule.ts): `formatSchedule` / `DAY_LABELS` /
+    `PERIOD_OPTIONS` / `SHELF_COLORS` / `pickShelfColor`。逆パーサは作らない。
+  - [`lib/data/`](../lib/data/): `utils`（`unwrap` / `generateInviteCode`）、`shelves`、
+    `materials`、`questionSets`、`groups`、`studySessions`、`shares`。
+    全関数が `(supabase, …args)` シグネチャでブラウザ・サーバー両対応。
+  - `listShelves` の件数集計は PostgREST 埋め込みを使わず単純クエリ 4 本を JS で畳む
+    （手書き `Relationships: []` だと埋め込みで型が壊れるため）。
+  - 検証用ハーネス [`app/dev/shelves/page.tsx`](../app/dev/shelves/page.tsx)。
+- **RLS 再帰バグ修正**: [`20260901133538_fix_question_set_shares_recursion.sql`](../supabase/migrations/20260901133538_fix_question_set_shares_recursion.sql)。
+  `question_sets` ⟷ `question_set_shares` の相互参照再帰を `owns_question_set` で解消（適用済み）。
+  タスク 2 の `lib/data/shelves.ts:listShelves` がクライアントから初めて `question_sets` を
+  SELECT したことで顕在化した既存バグ。
 
-**完了条件**: フロント側が `signInWithGoogle()` を呼ぶだけでログインでき、
-ログイン完了時に `google_credentials.refresh_token` が DB に保存される。
+---
 
-**FE タスク**: 実装済み。
+### 3. 棚（shelves）の実データ化
 
-- [`app/login/page.tsx`](../app/login/page.tsx) — Google ログインボタン。
-  `?next=` と `?auth_error=` を解釈する。
-- [`app/logout/page.tsx`](../app/logout/page.tsx) — マウント時に `signOut()` を呼ぶ
-  ログアウト画面。サイドバー右下のボタンからここへ遷移する。
-- [`lib/supabase/auth.ts`](../lib/supabase/auth.ts) に `signOut()` を追加。
-- [`proxy.ts`](../proxy.ts) — 未ログインで保護ページを開くと `/login?next=...` へ、
-  ログイン済みで `/login` を開くと `/` へリダイレクト（`/auth/*`・`/api/*` は除外）。
+- **対象**: [`app/page.tsx`](../app/page.tsx)（`L26-28` の `useState(initialCourses)` 周辺）、
+  [`app/components/modals/ShelfModal.tsx`](../app/components/modals/ShelfModal.tsx)、
+  [`app/components/views/CourseView.tsx`](../app/components/views/CourseView.tsx)
+- **やること**:
+  - `courses` / `selectedCode` / `courseMaterials` を実クエリへ。
+    **空配列・ローディング・エラーの 3 状態を追加**（現在 `selectedCode = initialCourses[0].code`
+    は空配列でクラッシュする）
+  - `ShelfModal` → `shelves` の insert / update。`page.tsx:saveCourse` は `id` ベースの upsert に
+  - `CourseView.tsx` のタブ数値リテラル（`講義資料 <span>6</span>` / `問題集 <span>3</span>`）を実カウントに
+  - `CourseView.tsx` の資料行のダミー値（`[42,38,51,45]ページ` / `8月[3,10,17,24]日追加`）を
+    実列（`size_bytes` は無いので削除、`created_at`）へ
+- **完了条件**: 棚の作成・編集・削除がリロード後も残る。
 
-### 2. `materials` Storage バケット作成（BE）
+### 4. 資料アップロードの実装
 
-**対応**: 完了。マイグレーション SQL で作成・適用済み。
+- **対象**: [`app/components/modals/MaterialModal.tsx`](../app/components/modals/MaterialModal.tsx)、
+  [`app/page.tsx`](../app/page.tsx)（`MaterialModal` の `onAdd`）、`lib/data/materials.ts`
+- **やること**:
+  - `MaterialModal` は現在 `file.name` だけを親へ渡して **File 本体を捨てている**。
+    `crypto.randomUUID()` で material_id を採番 →
+    `supabase.storage.from("materials").upload("{user_id}/{material_id}/{file_name}")` →
+    `materials.insert({ id, shelf_id, owner_id, storage_path, file_name, mime_type, size_bytes })`
+  - アップロード中／失敗の表示
+- **完了条件**: アップした資料が `CourseView` の資料タブと `CreateQuizModal`
+  の資料一覧（`GET /api/materials`）の両方に出る。
 
-- [`supabase/migrations/20260901100630_storage.sql`](../supabase/migrations/20260901100630_storage.sql):
-  ```sql
-  insert into storage.buckets (id, name, public)
-  values ('materials', 'materials', false)
-  on conflict (id) do nothing;
-  ```
-- Supabase MCP の `apply_migration` で本番プロジェクトへ適用済み
-  （`list_migrations` に `20260901100630 storage` として登録、
-  `storage.buckets` に `materials`（`public = false`）が存在することを確認済み）。
-- `storage.objects` の本人限定ポリシー `materials_storage_own` は
-  [`0002_rls.sql`](../supabase/migrations/0002_rls.sql) で適用済みのため追加不要。
+### 5. 問題集の永続化
 
-**完了条件**: 達成。フロント側がブラウザから `supabase.storage.from("materials").upload()` を呼べる。
-[Storage 節](#storage)に記載のパス規則 `{user_id}/{material_id}/{file_name}` を守ること。
+- **対象**: [`app/api/questions/generate/route.ts`](../app/api/questions/generate/route.ts)、
+  [`app/components/modals/CreateQuizModal.tsx`](../app/components/modals/CreateQuizModal.tsx)、
+  [`app/page.tsx`](../app/page.tsx)（`generatedQuiz`）、
+  [`app/components/views/QuizView.tsx`](../app/components/views/QuizView.tsx)、
+  [`app/components/views/CourseView.tsx`](../app/components/views/CourseView.tsx)
+- **やること**:
+  - Route Handler に `shelfId` を受け取らせ、生成後 `question_sets` へ insert して行を返す
+    （`source_material_id` も埋める。`materialId` ブランチならその値）
+  - 同時に `file` ブランチにも `getUser()` を入れて未認証穴（落とし穴 2）を塞ぐ
+  - `page.tsx:generatedQuiz` をメモリ保持から「保存済み ID」へ
+  - `CourseView` の問題集リテラル 3 件を実クエリへ。`navigate("quiz")` に `question_set_id` を渡す
+    （現在 id を渡していない）
+  - `QuizView` は id で `question_sets` を読み、`content` を `QuestionSet` にキャストして
+    [`components/QuestionPaper.tsx`](../components/QuestionPaper.tsx) へ
+- **完了条件**: 生成 → リロード → 同じ問題集が `QuestionPaper` に再表示される。
 
-**FE タスク**:
-- 資料アップロード UI
-- クライアント側で `crypto.randomUUID()` で `material_id` を採番し、
-  Storage パスと `materials` テーブルの `id` の両方に使用
-- アップロード完了後に `materials.insert()` で DB に行を追加
+### 6. グループ（作成・参加・メンバー）
 
-### 3. 問題生成 API を `materialId` 受け取りに変更（BE）
+- **対象**: [`app/components/views/GroupView.tsx`](../app/components/views/GroupView.tsx)、
+  [`app/components/Sidebar.tsx`](../app/components/Sidebar.tsx)、
+  [`app/page.tsx`](../app/page.tsx)（`groupName="情報工学3年"` 固定）、`lib/data/groups.ts`
+- **やること**:
+  - 1 ユーザー複数グループ対応。サイドバーにグループ切替を追加（`page.tsx` に `selectedGroupId` state）
+  - `GroupView` のアバター / `7 MEMBERS` / 招待コード `TANE-3Y7K` を
+    `group_members` + `profiles` + `groups.invite_code` に置換
+  - グループ作成 UI（`groups.insert` → 落とし穴 1 のトリガーで owner 行が入る）
+  - 招待コード入力 → `supabase.rpc("join_group_by_code", { code })`
+  - メンバー脱退（`group_members.delete`、本人のみ）
+- **完了条件**: 別アカウントが招待コードで参加し、両者のメンバー一覧に出る。
 
-**対応**: [app/api/questions/generate/route.ts](../app/api/questions/generate/route.ts) を改修。
+### 7. 共有（shelf_shares / question_set_shares）
 
-- 現状: `multipart/form-data` でファイル本体を受け取る
-- 変更後: `{ materialId: string, instruction?: string }` の JSON を受け取る
-- **ダウンロード時は [lib/supabase/server.ts](../lib/supabase/server.ts) のセッション付きクライアントを使う**
-  （admin クライアントを使うと他人の資料も読めてしまい、RLS の意味がない）
-- 生成結果 `QuestionSet` をそのまま `question_sets.content` へ INSERT して、
-  レスポンスで返す（保存も一度に行う）
+- **対象**: [`app/page.tsx`](../app/page.tsx)（`toggleShare`）、
+  [`app/components/views/CourseView.tsx`](../app/components/views/CourseView.tsx)、
+  [`app/components/views/QuizView.tsx`](../app/components/views/QuizView.tsx)、
+  [`app/components/views/GroupView.tsx`](../app/components/views/GroupView.tsx)、`lib/data/shares.ts`
+- **やること**:
+  - `toggleShare` / `CourseView` の共有ボタン / `QuizView` の共有ボタンを
+    `question_set_shares` / `shelf_shares` の insert・delete へ
+  - `GroupView` の共有棚（現在 `courses.slice(0,3)` のデモ import）を
+    `shelf_shares` 経由のクエリへ。非表示トグル（`hiddenShelves` ローカル state）を
+    `shelf_shares.visible` の update へ
+- **完了条件**: 共有した問題集が他メンバーの画面に出て、共有解除で消える。
 
-**完了条件**: フロント側が `POST /api/questions/generate` に
-`{ materialId, instruction }` を POST するだけで、
-新規に保存された `question_sets` 行が返される（ID・title・content）。
+### 8. 勉強会とカレンダー連携
 
-**FE タスク**:
-- 「問題を生成」ボタン・UI（資料選択 → 問題生成 API 呼び出し）
-- 生成中のローディング表示
-- 生成結果を `components/QuestionPaper.tsx` へ渡して A4 用紙として表示
+- **対象**: [`app/components/modals/ScheduleModal.tsx`](../app/components/modals/ScheduleModal.tsx)、
+  [`app/components/views/GroupView.tsx`](../app/components/views/GroupView.tsx)、`lib/data/studySessions.ts`
+- **やること**:
+  - `ScheduleModal` は現在 **非制御入力で値を一切読んでいない**（`defaultValue` のハードコード）。
+    制御化し、`日付 + 開始/終了時刻` を `starts_at` / `ends_at`（timestamptz）へ組み立てて
+    `study_sessions.insert({ group_id, created_by, title, location, starts_at, ends_at })`
+  - `GroupView` の予定リテラル配列（「つぎの勉強会」）を実クエリへ
+  - 「カレンダーへ」ボタン（現在「バックエンド接続後に利用できます」と notify するだけ）を
+    **実装済みの** `POST /api/calendar/events` に接続。返り値 `{created, skipped, failed}` を
+    toast に反映（`reauth_required` は再ログイン導線へ）
+  - キャンセルは `DELETE /api/calendar/events/{study_session_id}` → その後 `study_sessions` 行削除
+- **完了条件**: 予定作成 → 「カレンダーへ」→ 参加者の Google カレンダーに実際に入る。
 
-### 4. Google Calendar 連携（BE）
+### 9. アカウント画面
 
-**対応**: 完了。2 つの Route Handler を実装。Google API は依存追加せず raw `fetch`
-（[`lib/google/calendar.ts`](../lib/google/calendar.ts) が
-`oauth2.googleapis.com/token` と Calendar REST を直接叩く。
-オーケストレーションは [`lib/google/calendarSync.ts`](../lib/google/calendarSync.ts)）。
-`GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` をサーバー側でも読むようになった（`.env.example` 更新済み）。
+- **対象**: [`app/components/views/AccountView.tsx`](../app/components/views/AccountView.tsx)、
+  [`app/components/Sidebar.tsx`](../app/components/Sidebar.tsx)
+- **やること**:
+  - `ゆうた` / `工学部 情報工学科` / `yuta@example.jp` / `未接続` を
+    `supabase.auth.getUser()` + `profiles` + `google_credentials` 行の有無から
+  - 「ログアウト」ボタンを `notify()` スタブから既存の `signOut()`（`/logout` 遷移）へ
+  - サイドバーのアバター・氏名も同様に実データ化
+- **完了条件**: 表示名・メール・カレンダー連携状態が実アカウントを反映する。
 
-- [`POST /api/calendar/events`](../app/api/calendar/events/route.ts)
-  - ペイロード: `{ study_session_id: string }`
-  - 認可: グループメンバーであること（`study_sessions` の RLS 通過）のみ
-  - 動作: グループメンバー全員の `google_credentials` を引き、refresh token があるメンバーの
-    Google カレンダーへイベント作成 → `calendar_events` に 1 メンバー 1 行 insert
-    （`unique (study_session_id, user_id)`。既に行があるメンバーは再作成しない）
-  - 返り値:
-    ```json
-    { "created": [{ "user_id": "…", "event_id": "…" }],
-      "skipped": [{ "user_id": "…", "reason": "no_credentials" | "already_synced" }],
-      "failed":  [{ "user_id": "…", "error": "…", "reauth_required": true }] }
-    ```
-- [`DELETE /api/calendar/events/[id]`](../app/api/calendar/events/[id]/route.ts)
-  - パラメータ `[id]`: **`study_session_id`**（全員書き込みと対称にするため。Google イベント ID ではない）
-  - 認可: 同上
-  - 動作: その予定の `calendar_events` 全行をループし、各メンバーの Google イベントを削除 + 行削除。
-    **`study_sessions` 行そのものは消さない**（予定レコード削除は FE の責務）
-  - 返り値: `{ deleted: ["user_id", …], failed: [{ user_id, error, reauth_required? }] }`
+## 今回のスコープ外（将来）
 
-**完了条件**: 達成。フロント側が `study_sessions` 作成後に `POST /api/calendar/events` を
-呼ぶだけで、グループメンバー全員（Google 連携済みの人）のカレンダーへ書き込まれる。
+UI に存在するが、デモ導線から外れるため今回は触らない。
 
-**FE タスク**:
-- 勉強予定作成画面（`title` / `location` / `starts_at` / `ends_at`）
-- 「Google Calendar へ追加」ボタン（上記 API を呼び出し）
-- 予定一覧・編集・キャンセル
-
-### 5. 棚（shelves）・資料（materials）の CRUD（FE）
-
-**対応**: フロント側が `supabase-js` で直接 CRUD。バックエンド実装は不要（RLS が守る）。
-
-- 棚の作成・一覧・編集・削除画面
-- 資料アップロード UI（タスク 2 に同じ）
-- 各棚に属する資料一覧の表示
-
-### 6. 問題集の共有（FE）
-
-**対応**: フロント側が `supabase-js` で `question_set_shares` を直接操作。バックエンド実装は不要。
-
-- 生成済み問題集の一覧
-- グループへの共有ボタン
-- 共有済み問題集の表示（[components/QuestionPaper.tsx](../components/QuestionPaper.tsx) へ読み戻し）
-
-### 7. グループ機能（FE）
-
-**対応**: フロント側が `supabase-js` で直接 CRUD。バックエンド実装は不要（RLS が守る）。
-
-- グループ作成（`invite_code` 自動発行）
-- 招待コード入力で参加（`join_group_by_code` RPC を呼び出し）
-- グループメンバー一覧・脱退
-- `shelf_shares` / `question_set_shares` による共有・非表示設定の UI
-
-### 8. 課題（assignments）・課題結果投稿（FE）
-
-**対応**: フロント側が `supabase-js` で直接 CRUD。バックエンド実装は不要。
-
-- 課題作成・編集・削除画面
-- 課題一覧（ホーム画面で「7 日以内の締切」は `assignments.due_at` を WHERE で絞るだけで取得可）
-- 課題結果投稿画面（`minutes_spent` / `comment` の入力）
-- 投稿済み結果の一覧
-
-### 9. `supabase gen types typescript` への差し替え（BE）
-
-**対応**: 暫定型を CLI 生成の型に差し替える。
-
-- プロジェクトが安定してきたら、`supabase gen types typescript --project-id=<id>` を実行
-- [lib/supabase/types.ts](../lib/supabase/types.ts) を自動生成のものに差し替え
-- `question_sets.content` の型は `QuestionSet` へのキャストが必要（元々の型定義の方針は変わらない）
+- **学習時間タイマー** — [`HomeView.tsx`](../app/components/views/HomeView.tsx) /
+  [`TasksView.tsx`](../app/components/views/TasksView.tsx) の「時間を記録」。
+  対応テーブルが無い（事後入力の `assignment_reports.minutes_spent` のみ存在）。
+- **課題（assignments）と TasksView** — `assignments` / `assignment_reports` はテーブルだけ存在。
+  [`AssignmentReportModal.tsx`](../app/components/modals/AssignmentReportModal.tsx) の
+  `{ minutesSpent, comment }` はそのまま `minutes_spent` / `comment` に対応する。
+  `assignments.shelf_id` は NOT NULL なので、課題作成 UI には棚ピッカーが要る点に注意。
+- **勉強会の参加者数**（`GroupView` の「参加 5人」）— 出欠テーブルが無い。
+- **アクティビティフィード**（`GroupView` の「みんなの学習記録」）—
+  `assignment_reports` + `profiles` join に依存するため課題機能とセット。
+- **`supabase gen types typescript` への差し替え** — 当面は `lib/supabase/types.ts` を手書きで延命
+  （タスク 1 で新列と `Functions` を手で追加）。プロジェクトが安定したら
+  `supabase gen types typescript --project-id=<id>` の出力に差し替える。
+  `question_sets.content` は `QuestionSet` へのキャストが引き続き必要。

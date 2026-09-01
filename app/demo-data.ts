@@ -1,8 +1,12 @@
-export const courses = [
+import type { Course } from "./types";
+
+export const courses: Course[] = [
   {
     code: "CS-302",
     name: "データベース論",
     professor: "松本 教授",
+    schedule: "火曜 3限",
+    room: "情報棟 204",
     docs: 6,
     quizzes: 3,
     tab: "#5866c5",
@@ -12,6 +16,8 @@ export const courses = [
     code: "CS-305",
     name: "オペレーティングシステム",
     professor: "佐藤 准教授",
+    schedule: "水曜 2限",
+    room: "情報棟 301",
     docs: 9,
     quizzes: 2,
     tab: "#ea8e72",
@@ -21,6 +27,8 @@ export const courses = [
     code: "MA-211",
     name: "確率統計",
     professor: "中村 教授",
+    schedule: "木曜 1限",
+    room: "講義棟 A102",
     docs: 5,
     quizzes: 1,
     tab: "#54a887",
@@ -30,6 +38,8 @@ export const courses = [
     code: "CS-314",
     name: "機械学習基礎",
     professor: "山本 准教授",
+    schedule: "金曜 4限",
+    room: "情報棟 205",
     docs: 8,
     quizzes: 4,
     tab: "#b17fb6",

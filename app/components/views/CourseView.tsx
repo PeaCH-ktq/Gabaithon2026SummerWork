@@ -1,5 +1,4 @@
-import { materials } from "../../demo-data";
-import type { Navigate, Notify } from "../../types";
+import type { Course, Navigate } from "../../types";
 import { Button, Icon } from "../ui";
 
 type Props = {
@@ -7,7 +6,11 @@ type Props = {
   setActiveTab: (tab: "material" | "quiz") => void;
   navigate: Navigate;
   startCreate: () => void;
-  notify: Notify;
+  course: Course;
+  materials: string[];
+  openMaterial: () => void;
+  editCourse: () => void;
+  toggleShare: () => void;
 };
 
 export function CourseView({
@@ -15,7 +18,11 @@ export function CourseView({
   setActiveTab,
   navigate,
   startCreate,
-  notify,
+  course,
+  materials,
+  openMaterial,
+  editCourse,
+  toggleShare,
 }: Props) {
   return (
     <>
@@ -23,11 +30,12 @@ export function CourseView({
         ← 講義の棚
       </button>
       <header className="course-head">
-        <div className="course-code">CS-302</div>
+        <div className="course-code">{course.code}</div>
         <div>
-          <h1>データベース論</h1>
-          <p>松本 教授 ・ 火曜 3限 ・ 情報棟 204</p>
+          <h1>{course.name}</h1>
+          <p>{course.professor} ・ {course.schedule} ・ {course.room}</p>
         </div>
+        <Button onClick={editCourse}>棚を編集</Button>
         <Button primary icon="sparkle" onClick={startCreate}>
           問題をつくる
         </Button>
@@ -62,12 +70,13 @@ export function CourseView({
             </div>
             <Button
               icon="upload"
-              onClick={() => notify("ファイル選択を開きました（デモ）")}
+              onClick={openMaterial}
             >
               資料を追加
             </Button>
           </div>
           <div className="file-list">
+            {materials.length === 0 && <div className="empty-state"><b>資料はまだありません</b><p>「資料を追加」から最初のファイルを選んでください。</p></div>}
             {materials.map((name, i) => (
               <div className="file-row" key={name}>
                 <span className="file-icon">PDF</span>
@@ -96,6 +105,7 @@ export function CourseView({
             <Button primary icon="sparkle" onClick={startCreate}>
               新しくつくる
             </Button>
+            <Button icon="share" onClick={toggleShare}>{course.shared ? "共有を解除" : "グループに共有"}</Button>
           </div>
           <div className="file-list">
             {[

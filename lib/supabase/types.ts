@@ -4,10 +4,11 @@ import type { QuestionSet } from "@/lib/gemini/schema";
  * `supabase gen types typescript` の生成物に差し替える暫定の型。
  * `question_sets.content` は `QuestionSet`（`lib/gemini/schema.ts`）をそのまま使う。
  *
- * `Relationships: []` と `public.Views` / `public.Functions` は、
- * `@supabase/postgrest-js` の `GenericTable` / `GenericSchema` 制約
+ * `Relationships: []` と `public.Views` は、`@supabase/postgrest-js` の
+ * `GenericTable` / `GenericSchema` 制約
  * （`node_modules/@supabase/postgrest-js/src/types/common/common.ts`）を満たすために必要。
  * 無いと `.from(...)` の型推論が `never` に落ちる。
+ * `public.Functions` は `supabase.rpc(...)` の型付けのため実定義している。
  */
 export interface Database {
   public: {
@@ -39,6 +40,10 @@ export interface Database {
           term: string | null;
           day_of_week: number | null;
           period: number | null;
+          course_code: string | null;
+          professor: string | null;
+          room: string | null;
+          color: string;
           created_at: string;
         };
         Insert: {
@@ -48,6 +53,10 @@ export interface Database {
           term?: string | null;
           day_of_week?: number | null;
           period?: number | null;
+          course_code?: string | null;
+          professor?: string | null;
+          room?: string | null;
+          color?: string;
         };
         Update: Partial<{
           course_name: string;
@@ -55,6 +64,10 @@ export interface Database {
           term: string | null;
           day_of_week: number | null;
           period: number | null;
+          course_code: string | null;
+          professor: string | null;
+          room: string | null;
+          color: string;
         }>;
         Relationships: [];
       };
@@ -274,6 +287,15 @@ export interface Database {
       };
     };
     Views: Record<string, never>;
-    Functions: Record<string, never>;
+    Functions: {
+      is_group_member: {
+        Args: { gid: string };
+        Returns: boolean;
+      };
+      join_group_by_code: {
+        Args: { code: string };
+        Returns: string;
+      };
+    };
   };
 }
