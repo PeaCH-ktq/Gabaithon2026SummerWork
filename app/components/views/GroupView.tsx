@@ -21,7 +21,6 @@ export function GroupView({ navigate, notify, openSchedule }: Props) {
         </div>
         <p className="eyebrow">STUDY GROUP ・ 7 MEMBERS</p>
         <h1>情報工学3年</h1>
-        <p>一緒なら、試験までの道のりも少し軽くなる。</p>
         <Button
           icon="share"
           onClick={() => setInviteOpen((value) => !value)}

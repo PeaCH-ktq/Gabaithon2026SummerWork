@@ -3,9 +3,9 @@ import Link from "next/link";
 import type { Navigate, View } from "../types";
 import { Icon, type IconName } from "./ui";
 
-type Props = { view: View; navigate: Navigate; groupName: string };
+type Props = { view: View; navigate: Navigate; openShelves: () => void; groupName: string; displayName: string; profileLabel: string };
 
-export function Sidebar({ view, navigate, groupName }: Props) {
+export function Sidebar({ view, navigate, openShelves, groupName, displayName, profileLabel }: Props) {
   return (
     <aside className="sidebar">
       <button
@@ -31,7 +31,7 @@ export function Sidebar({ view, navigate, groupName }: Props) {
           <button
             key={item.id}
             className={`nav-item ${view === item.id || (item.id === "course" && view === "quiz") ? "active" : ""}`}
-            onClick={() => navigate(item.id as View)}
+            onClick={() => item.id === "course" ? openShelves() : navigate(item.id as View)}
           >
             <Icon name={item.icon as IconName} />
             <span>{item.label}</span>
@@ -56,8 +56,8 @@ export function Sidebar({ view, navigate, groupName }: Props) {
       <div className="sidebar-foot">
         <span className="avatar indigo">ゆ</span>
         <span>
-          <b>ゆうた</b>
-          <small>工学部 情報工学科</small>
+          <b>{displayName}</b>
+          <small>{profileLabel}</small>
         </span>
         <Link href="/logout" aria-label="ログアウト" title="ログアウト">
           <Icon name="more" />

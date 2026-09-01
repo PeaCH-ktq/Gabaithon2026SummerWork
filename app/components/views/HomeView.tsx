@@ -1,12 +1,11 @@
 import type React from "react";
-import { deadlines } from "../../demo-data";
-import type { LoadState, Navigate, Notify, Shelf } from "../../types";
+import type { Assignment, LoadState, Navigate, Notify, Shelf } from "../../types";
 import { formatSchedule } from "@/lib/format/schedule";
 import { Button, Icon } from "../ui";
 
-type Props = { shelves: Shelf[]; shelvesState: LoadState; navigate: Navigate; openCourse: (id: string) => void; startCreate: () => void; openShelf: () => void; notify: Notify };
+type Props = { shelves: Shelf[]; shelvesState: LoadState; assignments: Assignment[]; navigate: Navigate; openCourse: (id: string) => void; startCreate: () => void; openShelf: () => void; notify: Notify };
 
-export function HomeView({ shelves, shelvesState, navigate, openCourse, startCreate, openShelf, notify }: Props) {
+export function HomeView({ shelves, shelvesState, assignments, navigate, openCourse, startCreate, openShelf, notify }: Props) {
   const today = new Intl.DateTimeFormat("ja-JP", { timeZone: "Asia/Tokyo", year: "numeric", month: "long", day: "numeric", weekday: "long" }).format(new Date());
   const nextSessions = [
     { date: "9月6日（日）", time: "14:00 – 18:00", title: "データベース論 中間対策", place: "中央図書館 グループ学習室B" },
@@ -25,14 +24,14 @@ export function HomeView({ shelves, shelvesState, navigate, openCourse, startCre
       <section className="home-overview" aria-label="直近の予定">
         <article className="overview-card assignment-overview">
           <div className="overview-head"><span className="overview-icon"><Icon name="task" /></span><div><p className="eyebrow">UPCOMING DEADLINES</p><h2>締切の近い課題</h2></div><button className="text-link overview-action" onClick={() => navigate("tasks")}>すべて見る <Icon name="arrow" size={14} /></button></div>
-          <div className="overview-list">{deadlines.slice(0, 2).map((item) => <button key={item.title} onClick={() => navigate("tasks")}><span className={`date-box ${item.color}`}><b>{item.left}</b><small>{item.date}</small></span><span><b>{item.title}</b><small>{item.course}</small></span><Icon name="arrow" size={15} /></button>)}</div>
+          <div className="overview-list">{assignments.slice(0, 2).map((item) => <button key={item.title} onClick={() => navigate("tasks")}><span className={`date-box ${item.color}`}><b>{item.left}</b><small>{item.date}</small></span><span><b>{item.title}</b><small>{item.course}</small></span><Icon name="arrow" size={15} /></button>)}</div>
         </article>
         <article className="overview-card session-overview">
           <div className="overview-head"><span className="overview-icon"><Icon name="users" /></span><div><p className="eyebrow">NEXT SESSIONS</p><h2>直近の勉強会</h2></div><button className="text-link overview-action" onClick={() => navigate("group")}>グループへ <Icon name="arrow" size={14} /></button></div>
           <div className="overview-list">{nextSessions.map((session) => <button key={session.title} onClick={() => navigate("group")}><span className="session-date"><b>{session.date}</b><small>{session.time}</small></span><span><b>{session.title}</b><small><Icon name="home" size={11} /><span>{session.place}</span></small></span><Icon name="arrow" size={15} /></button>)}</div>
         </article>
       </section>
-      <section className="section">
+      <section className="section" id="course-shelves">
         <div className="section-head">
           <div>
             <p className="eyebrow">MY COURSES</p>
@@ -74,37 +73,6 @@ export function HomeView({ shelves, shelvesState, navigate, openCourse, startCre
                 <Icon name="arrow" size={17} />
               </div>
             </button>
-          ))}
-        </div>
-      </section>
-      <section className="section">
-        <div className="section-head">
-          <div>
-            <p className="eyebrow">UPCOMING</p>
-            <h2>もうすぐ締切</h2>
-          </div>
-          <button className="text-link" onClick={() => navigate("tasks")}>
-            課題をすべて見る <Icon name="arrow" size={15} />
-          </button>
-        </div>
-        <div className="deadline-list">
-          {deadlines.map((item) => (
-            <div className="deadline" key={item.title}>
-              <span className={`date-box ${item.color}`}>
-                <b>{item.left}</b>
-                <small>{item.date}</small>
-              </span>
-              <span className="deadline-title">
-                <b>{item.title}</b>
-                <small>{item.course}</small>
-              </span>
-              <button
-                onClick={() => notify("取り組み時間の記録を開始しました")}
-                aria-label={`${item.title}の時間を記録`}
-              >
-                <Icon name="clock" />
-              </button>
-            </div>
           ))}
         </div>
       </section>

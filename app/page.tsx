@@ -10,15 +10,18 @@ import { Sidebar } from "./components/Sidebar";
 import { Toast } from "./components/Toast";
 import { CourseView } from "./components/views/CourseView";
 import { AccountView } from "./components/views/AccountView";
+import { LogoutView } from "./components/views/LogoutView";
+import { ProfileEditView } from "./components/views/ProfileEditView";
 import { GroupView } from "./components/views/GroupView";
 import { HomeView } from "./components/views/HomeView";
 import { QuizView } from "./components/views/QuizView";
 import { TasksView } from "./components/views/TasksView";
-import type { LoadState, MaterialRow, Shelf, ShelfFormValues, View } from "./types";
+import type { Assignment, LoadState, MaterialRow, Profile, Shelf, ShelfFormValues, View } from "./types";
 import { createClient } from "@/lib/supabase/client";
 import { createShelf, listShelves, updateShelf } from "@/lib/data/shelves";
 import { listMaterialsByShelf } from "@/lib/data/materials";
 import { pickShelfColor } from "@/lib/format/schedule";
+import { deadlines } from "./demo-data";
 import type { QuestionSet } from "@/lib/gemini/schema";
 
 export default function Home() {
@@ -32,6 +35,8 @@ export default function Home() {
   const [savingShelf, setSavingShelf] = useState(false);
   const [courseMaterials, setCourseMaterials] = useState<Record<string, MaterialRow[]>>({});
   const [materialsState, setMaterialsState] = useState<LoadState>("loading");
+  const [assignments, setAssignments] = useState<Assignment[]>(deadlines);
+  const [profile, setProfile] = useState<Profile>({ displayName: "ゆうた", faculty: "工学部", department: "情報工学科", email: "yuta@example.jp" });
   const [step, setStep] = useState(1);
   const [toast, setToast] = useState("");
   const [activeTab, setActiveTab] = useState<"material" | "quiz">("material");
@@ -94,6 +99,11 @@ export default function Home() {
     navigate("course");
   }
 
+  function openShelves() {
+    setView("home");
+    window.setTimeout(() => document.getElementById("course-shelves")?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
+  }
+
   async function saveShelf(values: ShelfFormValues, id?: string) {
     setSavingShelf(true);
     try {
@@ -128,18 +138,19 @@ export default function Home() {
   return (
     <div className="app-shell">
       {/* 全画面で共通するサイドバーとメインナビゲーション。 */}
-      <Sidebar view={view} navigate={navigate} groupName="情報工学3年" />
+      <Sidebar view={view} navigate={navigate} openShelves={openShelves} groupName="情報工学3年" displayName={profile.displayName} profileLabel={`${profile.faculty} ${profile.department}`} />
       <main className="main">
         {/* ホーム：今日の学習、講義棚、直近の締切。 */}
         {view === "home" && (
           <HomeView
             shelves={shelves}
             shelvesState={shelvesState}
+            assignments={assignments}
+            notify={notify}
             openCourse={openCourse}
             openShelf={() => { setView("home"); setSelectedShelfId(null); setModal("shelf"); }}
             navigate={navigate}
             startCreate={startCreate}
-            notify={notify}
           />
         )}
         {/* 講義詳細：資料と作成済み問題集をタブで切り替える。 */}
@@ -148,6 +159,8 @@ export default function Home() {
             shelf={selectedShelf}
             materials={courseMaterials[selectedShelf.id] ?? []}
             materialsState={materialsState}
+            assignments={assignments.filter((assignment) => assignment.course === selectedShelf.course_name)}
+            openShelves={openShelves}
             openMaterial={() => setModal("material")}
             editCourse={() => setModal("shelf")}
             toggleShare={() => notify("共有はグループ画面から設定できます")}
@@ -165,7 +178,7 @@ export default function Home() {
           <QuizView navigate={navigate} notify={notify} questionSet={generatedQuiz} />
         )}
         {/* 課題：未完了と完了済みのタスクを一覧表示する。 */}
-        {view === "tasks" && <TasksView notify={notify} />}
+        {view === "tasks" && <TasksView notify={notify} items={assignments} setItems={setAssignments} courseNames={shelves.map((shelf) => shelf.course_name)} openCourse={(courseName) => { const shelf = shelves.find((item) => item.course_name === courseName); if (shelf) openCourse(shelf.id); }} />}
         {/* グループ：勉強会、共有棚、メンバーの活動記録。 */}
         {view === "group" && (
           <GroupView
@@ -174,7 +187,9 @@ export default function Home() {
             openSchedule={() => setModal("schedule")}
           />
         )}
-        {view === "account" && <AccountView navigate={navigate} notify={notify} />}
+        {view === "account" && <AccountView navigate={navigate} notify={notify} profile={profile} />}
+        {view === "profile-edit" && <ProfileEditView navigate={navigate} profile={profile} onSave={(next) => { setProfile(next); navigate("account"); notify("プロフィールを更新しました"); }} />}
+        {view === "logout" && <LogoutView navigate={navigate} />}
       </main>
       {/* 資料と出題条件を選択する、2段階の問題作成モーダル。 */}
       {modal === "create" && (

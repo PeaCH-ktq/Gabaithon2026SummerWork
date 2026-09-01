@@ -128,3 +128,12 @@
   .private-pill,.share-pill { display: none; }
   .content-card { padding: 17px; }
 }
+
+.course-assignments { margin: 22px 0; padding: 20px; border: 1px solid var(--line); border-radius: 15px; background: var(--card); }
+.course-assignments .card-head { margin-bottom: 12px; }
+.course-assignment-list { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 9px; }
+.course-assignment-list>button { display: flex; align-items: center; gap: 10px; padding: 9px; border: 1px solid var(--line); border-radius: 11px; background: white; text-align: left; }
+.course-assignment-list>button>span:nth-child(2) { min-width: 0; flex: 1; display: flex; flex-direction: column; }
+.course-assignment-list>button>span:nth-child(2) b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; }
+.course-assignment-list>button>span:nth-child(2) small { color: var(--muted); font-size: 9px; }
+@media (max-width:720px) { .course-assignment-list { grid-template-columns: 1fr; } }

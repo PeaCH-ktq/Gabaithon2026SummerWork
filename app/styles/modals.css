@@ -149,6 +149,7 @@
   padding: 10px 12px;
   background: #faf9f6;
 }
+.text-field select { border: 1px solid var(--line); border-radius: 9px; padding: 10px 12px; background: #faf9f6; }
 .text-field textarea { border: 1px solid var(--line); border-radius: 9px; padding: 10px 12px; background: #faf9f6; resize: vertical; font: inherit; font-weight: 400; }
 .text-field>small { align-self: flex-end; color: var(--muted); font-weight: 400; }
 .report-task-name { margin-top: 6px; color: var(--indigo) !important; font-weight: 700; }
