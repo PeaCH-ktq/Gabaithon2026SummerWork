@@ -3,9 +3,9 @@ import type { Assignment, LoadState, Navigate, Notify, Shelf } from "../../types
 import { formatSchedule } from "@/lib/format/schedule";
 import { Button, Icon } from "../ui";
 
-type Props = { shelves: Shelf[]; shelvesState: LoadState; assignments: Assignment[]; navigate: Navigate; openCourse: (id: string) => void; startCreate: () => void; openShelf: () => void; notify: Notify };
+type Props = { shelves: Shelf[]; shelvesState: LoadState; assignments: Assignment[]; navigate: Navigate; openCourse: (id: string) => void; startCreate: () => void; openShelf: () => void; notify: Notify; userId: string | null };
 
-export function HomeView({ shelves, shelvesState, assignments, navigate, openCourse, startCreate, openShelf, notify }: Props) {
+export function HomeView({ shelves, shelvesState, assignments, navigate, openCourse, startCreate, openShelf, notify, userId }: Props) {
   const today = new Intl.DateTimeFormat("ja-JP", { timeZone: "Asia/Tokyo", year: "numeric", month: "long", day: "numeric", weekday: "long" }).format(new Date());
   const nextSessions = [
     { date: "9月6日（日）", time: "14:00 – 18:00", title: "データベース論 中間対策", place: "中央図書館 グループ学習室B" },
@@ -54,10 +54,10 @@ export function HomeView({ shelves, shelvesState, assignments, navigate, openCou
             >
               <div className="shelf-top">
                 <span>{shelf.course_code ?? "コード未設定"}</span>
-                {shelf.sharedGroupIds.length > 0 && (
+                {shelf.shares.length > 0 && (
                   <span className="shared">
                     <Icon name="users" size={12} />
-                    共有中
+                    {shelf.owner_id === userId ? "共有中" : "共有された棚"}
                   </span>
                 )}
               </div>

@@ -196,6 +196,11 @@ $$;
 [`20260901133538_fix_question_set_shares_recursion.sql`](../supabase/migrations/20260901133538_fix_question_set_shares_recursion.sql)
 で修正済み（`0002_rls.sql` 自体は歴史的経緯でそのまま）。
 
+同様に、「棚を共有すると中身の問題集もすべて共有される」（タスク7）を `question_sets_select` から
+直接 `shelf_shares` を参照する形で書くと、`shelf_shares_select` が `is_group_member` だけを見ているため
+実際には再帰しないが、既存パターンに合わせて `is_shelf_shared(shelf_id)`（SECURITY DEFINER）に切り出した。
+[`20260902091357_group_sharing.sql`](../supabase/migrations/20260902091357_group_sharing.sql) 参照。
+
 ### グループ参加はポリシーではなく関数で制御
 
 「招待コードを知っている人だけが参加できる」は RLS だけでは表現できないため、
@@ -209,11 +214,11 @@ $$;
 | profiles | 全員 | 本人のみ |
 | materials | `owner_id = auth.uid()` のみ | 本人のみ |
 | shelves | 本人、または `shelf_shares` 経由で `is_group_member` かつ `visible = true` | 本人のみ |
-| question_sets | 本人、または `question_set_shares` 経由で `is_group_member` | 本人のみ |
+| question_sets | 本人、または `is_shelf_shared(shelf_id)`（棚が可視共有されていれば中身の問題集も見える）、または `question_set_shares` 経由で `is_group_member` | 本人のみ |
 | question_set_shares | `is_group_member` または `owns_question_set`（SECURITY DEFINER。再帰回避） | `owns_question_set` |
 | groups | `is_group_member(id)` または `created_by = auth.uid()` | 作成は誰でも可、更新・削除は `role = 'owner'` |
 | group_members | `is_group_member(group_id)` | `join_group_by_code` 経由のみ insert、脱退は本人 |
-| shelf_shares | `is_group_member(group_id)` | 対象棚の所有者 |
+| shelf_shares | `is_group_member(group_id)` | insert/update/delete とも対象棚の所有者 |
 | study_sessions | `is_group_member(group_id)` | 作成はメンバー、更新・削除は作成者 |
 | assignments | `is_group_member(group_id)`、または `shelf_id` の所有者 | 作成はメンバー、更新・削除は作成者 |
 | assignment_reports | 対象課題のグループの `is_group_member`（`group_id` が非 NULL の課題のみ） | 本人の行のみ |
@@ -283,9 +288,10 @@ Google ログイン時、Calendar への書き込み権限（`calendar.events` �
     （値はアプリから読まれず Supabase ダッシュボードに設定するもの）。
   - `app/auth/callback/route.ts` はコミット済み（`6058e7e`）。
   - **残りはダッシュボード側の設定作業のみ**（「完了済み」節参照）。
-- 問題生成 API は `materialId` 受け取りに改修済み。ただし
-  **生成結果を `question_sets` に保存する処理は未実装**（レスポンスで `{ questionSet }` を返すのみ）。
-  → 今後のタスク 5 で対応。
+- 問題生成 API は `materialId` 受け取りに改修済み。生成結果を `question_sets` へ
+  insert し、レスポンスで `{ questionSet, questionSetId }` を返す（タスク 5 で対応済み）。
+  現行実装は `materialId` ブランチのみで `file` ブランチは撤去済み。`getUser()` で
+  未認証を 401 で弾く（落とし穴 2 も実質解消）。
 
 ## 既知の不整合・落とし穴（実装前に読む）
 
@@ -300,10 +306,9 @@ FE 調査で判明した、実装時に踏むと詰まる箇所。
    `.insert().select()`）は RETURNING 行に SELECT ポリシーを適用するが、同一ステートメント内の
    `is_group_member`（STABLE）は AFTER トリガーの挿入をまだ見ないため、(a) だけでは弾かれる。
 
-2. **`POST /api/questions/generate` の `file` ブランチが未認証で通る**
-   [`proxy.ts`](../proxy.ts) が `/api/*` を除外しているため。`materialId` ブランチだけが
-   `getUser()` を通る（[`app/api/questions/generate/route.ts`](../app/api/questions/generate/route.ts) の `materialFromDatabase`）。
-   → タスク 5 で `file` ブランチにも認証を入れる。
+2. ~~**`POST /api/questions/generate` の `file` ブランチが未認証で通る**~~
+   → **解消済み**（タスク 5）。`file` ブランチを撤去し、`materialId` ブランチのみに統一。
+   ハンドラ冒頭で `getUser()` を通し、未認証は 401。
 
 3. ~~**`lib/supabase/types.ts` の `Functions` が `Record<string, never>`**~~
    → **解消済み**（タスク 1）。`Functions` に `is_group_member` / `join_group_by_code` を手書き追加。
@@ -328,8 +333,19 @@ FE 調査で判明した、実装時に踏むと詰まる箇所。
 
 7. **共有された棚の件数表示に注意**（`lib/data/shelves.ts:listShelves`）
    `materials_all_own` により、他人から共有された棚の `materialCount` は必ず 0 になる
-   （講義資料は共有しない設計なので正しい）。`sharedGroupIds` には
+   （講義資料は共有しない設計なので正しい）。`shares`（`sharedGroupIds` はここから導出）には
    `shelf_shares_select`（`is_group_member`）の都合で「自分が所属するグループへの共有」だけが載る。
+
+8. **`shelf_shares` に UPDATE ポリシーが無かった** ~~→ 解消済み~~。
+   `0002_rls.sql` は select/insert/delete のみで、`lib/data/shares.ts:setShelfVisible` の
+   `.update({visible})` が 0 行更新で無言失敗していた。
+   [`20260902091357_group_sharing.sql`](../supabase/migrations/20260902091357_group_sharing.sql)
+   の `shelf_shares_update`（対象棚の所有者のみ）で解消。
+
+9. **共有棚の非表示トグルは棚の所有者しか押せない**
+   RLS 上 `shelf_shares` の insert/update/delete は対象棚の所有者のみに限定されているため
+   （招待コードのように他メンバーが操作できる想定ではない）。`GroupView` は
+   `shelf.owner_id === userId` のときだけ非表示トグルを表示する。
 
 ## 開発方針
 
@@ -361,13 +377,13 @@ Route Handler を置くのは以下のいずれかに該当する場合**のみ*
 | --- | --- | --- | --- |
 | `GET /auth/callback` | 実装済み・コミット済み | service-role | Google OAuth コールバック（`google_credentials` upsert） |
 | `GET /api/materials` | 実装済み | セッション | 自分の資料一覧（`CreateQuizModal` が使用） |
-| `POST /api/questions/generate` | `materialId` 対応済み。**`question_sets` 保存は未実装** | `GEMINI_API_KEY` | 資料から問題生成 |
+| `POST /api/questions/generate` | 実装済み。`materialId` 受け取り＋`question_sets` 保存＋`getUser()` 認証 | `GEMINI_API_KEY` | 資料から問題生成 |
 | `POST /api/calendar/events` | 実装済み・**UI 未接続** | refresh token + Calendar API | 勉強予定をグループ全員の Google Calendar へ |
 | `DELETE /api/calendar/events/[id]` | 実装済み・**UI 未接続**（`[id]` = `study_session_id`） | refresh token + Calendar API | 上記の全員ぶん取り消し |
 
 `POST /api/questions/generate` の詳細ペイロード/エラーは既存実装
-（`multipart/form-data`、`file` か `materialId` の排他、`extraInstruction` ≤1000 字、
-429 / 503+`Retry-After` / 502）を参照。カレンダー API の返り値形は:
+（`multipart/form-data`、`materialId` 必須、`extraInstruction` ≤1000 字、
+429 / 503+`Retry-After` / 502）を参照。保存失敗時は `{ questionSet, questionSetId: null, saveError }` を 200 で返す。カレンダー API の返り値形は:
 
 ```json
 { "created": [{ "user_id": "…", "event_id": "…" }],
@@ -408,6 +424,13 @@ Route Handler を置くのは以下のいずれかに該当する場合**のみ*
   - 検証用ハーネス [`app/dev/shelves/page.tsx`](../app/dev/shelves/page.tsx)。
 - **タスク 3（棚の実データ化）**: 本番 UI（`page.tsx` / `ShelfModal` / `HomeView` /
   `CourseView`）を `lib/data/shelves` ＋ `lib/data/materials` へ接続。詳細は下記タスク3節。
+- **タスク 4（資料アップロード）**: `lib/data/materials.uploadMaterial` で Storage
+  アップロード＋`materials` insert（失敗時ロールバック）。`MaterialModal` は File 本体を渡す。
+  詳細は下記タスク4節。
+- **タスク 5（問題集の永続化）**: `POST /api/questions/generate` が生成後
+  `question_sets` へ insert し `{ questionSet, questionSetId }` を返す。`file` ブランチ撤去＋
+  `getUser()` 認証（落とし穴 2 解消）。`CourseView` / `QuizView` を `lib/data/questionSets` へ
+  接続。詳細は下記タスク5節。
 - **RLS バグ修正 2 件**（いずれも既存スキーマの潜在バグ。タスク 2 の
   `lib/data/*` がクライアントから初めて該当テーブルを叩いて顕在化）:
   - [`20260901133538_fix_question_set_shares_recursion.sql`](../supabase/migrations/20260901133538_fix_question_set_shares_recursion.sql)
@@ -415,6 +438,10 @@ Route Handler を置くのは以下のいずれかに該当する場合**のみ*
   - [`20260901134102_groups_select_creator.sql`](../supabase/migrations/20260901134102_groups_select_creator.sql)
     — `groups_select_member` に `created_by = auth.uid()` を追加（グループ作成の
     `.insert().select()` が RLS で弾かれる問題。落とし穴 1 参照）。
+- **タスク 6（グループ）・タスク 7（共有）**: 下記「6. グループ」「7. 共有」節を参照。
+  [`20260902091357_group_sharing.sql`](../supabase/migrations/20260902091357_group_sharing.sql) を
+  MCP `apply_migration` で適用済み（`shelf_shares_update` ポリシー追加、`is_shelf_shared` 関数と
+  `question_sets_select` の書き換え）。
 
 ---
 
@@ -442,69 +469,96 @@ Route Handler を置くのは以下のいずれかに該当する場合**のみ*
   - `app/types.ts` に `MaterialRow` / `ShelfFormValues` / `LoadState` を追加。
     `Course` はデモ 3 画面（GroupView / QuizView / TasksView）専用として残置。
   - `.muted` ユーティリティを [`app/styles/common.css`](../app/styles/common.css) に追加。
-- **未対応（後続タスク）**: 資料アップロード本体（タスク4）、問題集リスト・タブ内容（タスク5）、
-  `CourseView` の共有ボタン（タスク7。暫定でトースト通知のみ）。
+- **未対応（後続タスク）**: `CourseView` の共有ボタン（タスク7。暫定でトースト通知のみ）。
 - **完了条件**: 棚の作成・編集がリロード後も残る（削除 UI は本番画面には未配置。
   `lib/data/shelves.deleteShelf` と検証ハーネス [`app/dev/shelves/page.tsx`](../app/dev/shelves/page.tsx) にはあり）。
 
-### 4. 資料アップロードの実装
+### 4. 資料アップロードの実装 ✅ 完了
 
 - **対象**: [`app/components/modals/MaterialModal.tsx`](../app/components/modals/MaterialModal.tsx)、
-  [`app/page.tsx`](../app/page.tsx)（`MaterialModal` の `onAdd`）、`lib/data/materials.ts`
-- **やること**:
-  - `MaterialModal` は現在 `file.name` だけを親へ渡して **File 本体を捨てている**。
-    `crypto.randomUUID()` で material_id を採番 →
-    `supabase.storage.from("materials").upload("{user_id}/{material_id}/{file_name}")` →
-    `materials.insert({ id, shelf_id, owner_id, storage_path, file_name, mime_type, size_bytes })`
-  - アップロード中／失敗の表示
-- **完了条件**: アップした資料が `CourseView` の資料タブと `CreateQuizModal`
+  [`app/page.tsx`](../app/page.tsx)（`MaterialModal` の `onUpload`）、`lib/data/materials.ts`
+- **実装内容**:
+  - `MaterialModal` は `onUpload(file: File)` で File 本体を親へ渡す（アップロード中・
+    エラー表示つき）。
+  - [`lib/data/materials.ts`](../lib/data/materials.ts) `uploadMaterial(supabase, shelfId, file)`:
+    `crypto.randomUUID()` で material_id 採番 → `{user_id}/{material_id}/{safeFileName}` へ
+    `supabase.storage.from("materials").upload()` → `createMaterial` で
+    `materials.insert({ id, shelf_id, owner_id, storage_path, file_name, mime_type, size_bytes })`。
+    行 insert に失敗したらアップロード済みファイルを削除して孤児を残さない。
+  - サイズ上限（`MAX_MATERIAL_BYTES`）・MIME 検証（`ALLOWED_MATERIAL_MIME_TYPES`）、
+    `file.type` が空の場合の拡張子補完、非 ASCII ファイル名の Storage キー sanitize
+    （表示名は `file_name` に原文保存）。
+  - [`app/page.tsx`](../app/page.tsx) の `MaterialModal` `onUpload` が
+    `uploadMaterial(supabase, selectedShelf.id, file)` を呼び、`courseMaterials` を更新。
+- **完了条件（達成）**: アップした資料が `CourseView` の資料タブと `CreateQuizModal`
   の資料一覧（`GET /api/materials`）の両方に出る。
 
-### 5. 問題集の永続化
+### 5. 問題集の永続化 ✅ 完了
 
 - **対象**: [`app/api/questions/generate/route.ts`](../app/api/questions/generate/route.ts)、
-  [`app/components/modals/CreateQuizModal.tsx`](../app/components/modals/CreateQuizModal.tsx)、
-  [`app/page.tsx`](../app/page.tsx)（`generatedQuiz`）、
   [`app/components/views/QuizView.tsx`](../app/components/views/QuizView.tsx)、
-  [`app/components/views/CourseView.tsx`](../app/components/views/CourseView.tsx)
-- **やること**:
-  - Route Handler に `shelfId` を受け取らせ、生成後 `question_sets` へ insert して行を返す
-    （`source_material_id` も埋める。`materialId` ブランチならその値）
-  - 同時に `file` ブランチにも `getUser()` を入れて未認証穴（落とし穴 2）を塞ぐ
-  - `page.tsx:generatedQuiz` をメモリ保持から「保存済み ID」へ
-  - `CourseView` の問題集リテラル 3 件を実クエリへ。`navigate("quiz")` に `question_set_id` を渡す
-    （現在 id を渡していない）
-  - `QuizView` は id で `question_sets` を読み、`content` を `QuestionSet` にキャストして
-    [`components/QuestionPaper.tsx`](../components/QuestionPaper.tsx) へ
-- **完了条件**: 生成 → リロード → 同じ問題集が `QuestionPaper` に再表示される。
+  [`app/components/views/CourseView.tsx`](../app/components/views/CourseView.tsx)、
+  [`app/page.tsx`](../app/page.tsx)、[`lib/data/questionSets.ts`](../lib/data/questionSets.ts)
+- **実装内容**:
+  - Route Handler は資料行から `shelf_id` を解決し、生成後 `saveQuestionSet` で
+    `question_sets.insert({ shelf_id, owner_id, source_material_id: materialId, title, content })`。
+    レスポンスは `{ questionSet, questionSetId }`（保存失敗時は `questionSetId: null` ＋ `saveError` を 200）。
+  - `file` ブランチは撤去し `materialId` のみに統一。冒頭で `getUser()`、未認証は 401（落とし穴 2 解消）。
+  - `page.tsx` は生成結果を「保存済み ID」（`selectedQuestionSetId`）で保持。`finishGeneration` 経由。
+  - [`lib/data/questionSets.ts`](../lib/data/questionSets.ts): `listQuestionSetsByShelf` /
+    `getQuestionSet`（`content` を `QuestionSet` にキャストして返す）。
+  - `CourseView` の問題集リストは `listQuestionSetsByShelf` の実クエリ（`questionSets` /
+    `questionSetsState`）。行クリックで `openQuiz(qs.id)` → `navigate("quiz")`。
+  - `QuizView` は `questionSetId` で `getQuestionSet` を読み、`content` を
+    [`components/QuestionPaper.tsx`](../components/QuestionPaper.tsx) へ渡す。
+- **完了条件（達成）**: 生成 → リロード → 同じ問題集が `QuestionPaper` に再表示される。
 
-### 6. グループ（作成・参加・メンバー）
+### 6. グループ（作成・参加・メンバー） ✅ 完了
 
 - **対象**: [`app/components/views/GroupView.tsx`](../app/components/views/GroupView.tsx)、
   [`app/components/Sidebar.tsx`](../app/components/Sidebar.tsx)、
-  [`app/page.tsx`](../app/page.tsx)（`groupName="情報工学3年"` 固定）、`lib/data/groups.ts`
-- **やること**:
-  - 1 ユーザー複数グループ対応。サイドバーにグループ切替を追加（`page.tsx` に `selectedGroupId` state）
-  - `GroupView` のアバター / `7 MEMBERS` / 招待コード `TANE-3Y7K` を
-    `group_members` + `profiles` + `groups.invite_code` に置換
-  - グループ作成 UI（`groups.insert` → 落とし穴 1 のトリガーで owner 行が入る）
-  - 招待コード入力 → `supabase.rpc("join_group_by_code", { code })`
-  - メンバー脱退（`group_members.delete`、本人のみ）
-- **完了条件**: 別アカウントが招待コードで参加し、両者のメンバー一覧に出る。
+  [`app/components/modals/GroupModal.tsx`](../app/components/modals/GroupModal.tsx)、
+  [`app/page.tsx`](../app/page.tsx)、`lib/data/groups.ts`
+- **実装内容**:
+  - `page.tsx` に `groups` / `groupsState` / `selectedGroupId` state を追加。`loadGroups` で
+    `listMyGroups` を読み、選択中グループが一覧から消えたら先頭グループへフォールバック。
+  - `Sidebar` は `groupName` 固定 prop を廃し、`groups` / `selectedGroupId` / `onSelectGroup` /
+    `onCreateGroup` を受け取る。TOGETHER の nav-item は 1 つのまま、複数グループがあるときだけ
+    矢印から `.group-switcher` ポップオーバー（外側クリックで閉じる）を開いて切り替える。
+  - `GroupModal`（新規）: グループ作成（`createGroup`）と招待コード参加（`joinGroupByCode`）を
+    1 モーダルにまとめた。成功時は `loadGroups` → 新/参加先グループを選択 → `group` 画面へ遷移。
+  - `GroupView` は `group: GroupRow | null` を受け取る実データ表示に刷新。アバター・
+    `${members.length} MEMBERS`・招待コード・メンバー一覧は `listGroupMembers` から。
+    グループ未所属時は空状態、グループ読み込み中は専用メッセージを出す。
+    「グループを抜ける」ボタンを追加（`leaveGroup`）。
+- **完了条件（達成）**: 別アカウントが招待コードで参加すると、両者のメンバー一覧に出る。
 
-### 7. 共有（shelf_shares / question_set_shares）
+### 7. 共有（shelf_shares / question_set_shares） ✅ 完了
 
-- **対象**: [`app/page.tsx`](../app/page.tsx)（`toggleShare`）、
+- **対象**: [`app/page.tsx`](../app/page.tsx)、
   [`app/components/views/CourseView.tsx`](../app/components/views/CourseView.tsx)、
   [`app/components/views/QuizView.tsx`](../app/components/views/QuizView.tsx)、
-  [`app/components/views/GroupView.tsx`](../app/components/views/GroupView.tsx)、`lib/data/shares.ts`
-- **やること**:
-  - `toggleShare` / `CourseView` の共有ボタン / `QuizView` の共有ボタンを
-    `question_set_shares` / `shelf_shares` の insert・delete へ
-  - `GroupView` の共有棚（現在 `courses.slice(0,3)` のデモ import）を
-    `shelf_shares` 経由のクエリへ。非表示トグル（`hiddenShelves` ローカル state）を
-    `shelf_shares.visible` の update へ
-- **完了条件**: 共有した問題集が他メンバーの画面に出て、共有解除で消える。
+  [`app/components/views/GroupView.tsx`](../app/components/views/GroupView.tsx)、
+  [`app/components/modals/ShareModal.tsx`](../app/components/modals/ShareModal.tsx)、`lib/data/shares.ts`
+- **仕様（実装前に決定）**:
+  - 共有の単位は**棚**。棚を共有すると、その棚の問題集はすべて自動的に共有される
+    （個別の `question_set_shares` は今回 UI から書かない。テーブル・RLS・
+    `lib/data/shares.ts` の `shareQuestionSet` / `unshareQuestionSet` は将来の個別共有用に残置）。
+    これを表現するため [`20260902091357_group_sharing.sql`](../supabase/migrations/20260902091357_group_sharing.sql)
+    で `question_sets_select` に `is_shelf_shared(shelf_id)` を追加。
+  - UI はモーダル方式。`CourseView` の共有ボタン・`QuizView` の共有ボタンはどちらも
+    `ShareModal`（自分の所属グループをチェックボックスで選ぶ）を開く。
+- **実装内容**:
+  - `ShareModal`（新規）: 初期チェックは `shelf.shares`。保存時は親（`page.tsx:saveShares`）が
+    チェック差分を取り、追加分 `shareShelf` / 削除分 `unshareShelf` を並列実行して `loadShelves` で再読込。
+  - `CourseView` / `QuizView` は所有者（`shelf.owner_id === userId`）だけに編集系ボタン
+    （棚を編集・資料を追加・問題をつくる・共有）を出す。非所有者が開いた共有棚は
+    講義資料タブが常に 0 件（`materials_all_own` により正しい）になるため、空状態文言を出し分ける。
+  - `GroupView` の共有棚一覧は `shelves` prop（親の `listShelves` 結果）を
+    `shelf.shares.some(s => s.group_id === group.id)` で絞る。非表示トグルは
+    `shelf.owner_id === userId` のときだけ表示し、`setShelfVisible` を呼ぶ
+    （`shelf_shares` に UPDATE ポリシーが無かったため同マイグレーションで追加）。
+- **完了条件（達成）**: 共有した棚の問題集が他メンバーの画面に出て、共有解除・非表示で消える。
 
 ### 8. 勉強会とカレンダー連携
 

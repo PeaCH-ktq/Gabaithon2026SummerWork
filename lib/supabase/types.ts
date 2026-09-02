@@ -297,6 +297,10 @@ export interface Database {
         Args: { code: string };
         Returns: string;
       };
+      is_shelf_shared: {
+        Args: { sid: string };
+        Returns: boolean;
+      };
     };
   };
 }

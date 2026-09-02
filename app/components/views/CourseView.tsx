@@ -15,9 +15,10 @@ type Props = {
   openMaterial: () => void;
   openQuiz: (id: string) => void;
   editCourse: () => void;
-  toggleShare: () => void;
+  openShare: () => void;
   assignments: Assignment[];
   openShelves: () => void;
+  isOwner: boolean;
 };
 
 const DATE_FMT = new Intl.DateTimeFormat("ja-JP", { month: "long", day: "numeric" });
@@ -35,9 +36,10 @@ export function CourseView({
   openMaterial,
   openQuiz,
   editCourse,
-  toggleShare,
+  openShare,
   assignments,
   openShelves,
+  isOwner,
 }: Props) {
   return (
     <>
@@ -50,16 +52,18 @@ export function CourseView({
           <h1>{shelf.course_name}</h1>
           <p>{shelf.professor ?? "担当教員未設定"} ・ {formatSchedule(shelf.day_of_week, shelf.period)} ・ {shelf.room ?? "教室未設定"}</p>
         </div>
-        <Button onClick={editCourse}>棚を編集</Button>
-        <Button primary icon="sparkle" onClick={startCreate}>
-          問題をつくる
-        </Button>
+        {isOwner && <Button onClick={editCourse}>棚を編集</Button>}
+        {isOwner && (
+          <Button primary icon="sparkle" onClick={startCreate}>
+            問題をつくる
+          </Button>
+        )}
       </header>
       <div className="privacy-note">
         <Icon name="check" />
         <div>
           <b>講義資料はあなただけに表示されます</b>
-          <p>グループに共有されるのは、共有を許可した問題集だけです。</p>
+          <p>{isOwner ? "グループに共有されるのは、共有を許可した棚の問題集だけです。" : "この棚はグループに共有されています。講義資料は所有者だけが閲覧できます。"}</p>
         </div>
       </div>
       <section className="course-assignments">
@@ -87,17 +91,24 @@ export function CourseView({
               <h2>講義資料</h2>
               <p>PDFやスライドを追加すると、出題範囲に選べます。</p>
             </div>
-            <Button
-              icon="upload"
-              onClick={openMaterial}
-            >
-              資料を追加
-            </Button>
+            {isOwner && (
+              <Button
+                icon="upload"
+                onClick={openMaterial}
+              >
+                資料を追加
+              </Button>
+            )}
           </div>
           <div className="file-list">
             {materialsState === "loading" && <div className="empty-state"><b>読み込み中…</b></div>}
             {materialsState === "error" && <div className="empty-state"><b>資料の読み込みに失敗しました</b></div>}
-            {materialsState === "ready" && materials.length === 0 && <div className="empty-state"><b>資料はまだありません</b><p>「資料を追加」から最初のファイルを選んでください。</p></div>}
+            {materialsState === "ready" && materials.length === 0 && (
+              <div className="empty-state">
+                <b>資料はまだありません</b>
+                <p>{isOwner ? "「資料を追加」から最初のファイルを選んでください。" : "この棚の資料は所有者だけが閲覧できます。"}</p>
+              </div>
+            )}
             {materials.map((material) => (
               <div className="file-row" key={material.id}>
                 <span className="file-icon">{extLabel(material.file_name, material.mime_type)}</span>
@@ -120,10 +131,14 @@ export function CourseView({
               <h2>作成した問題集</h2>
               <p>印刷、PDF保存、グループ共有ができます。</p>
             </div>
-            <Button primary icon="sparkle" onClick={startCreate}>
-              新しくつくる
-            </Button>
-            <Button icon="share" onClick={toggleShare}>{shelf.sharedGroupIds.length > 0 ? "共有を解除" : "グループに共有"}</Button>
+            {isOwner && (
+              <>
+                <Button primary icon="sparkle" onClick={startCreate}>
+                  新しくつくる
+                </Button>
+                <Button icon="share" onClick={openShare}>{shelf.shares.length > 0 ? "共有設定" : "グループに共有"}</Button>
+              </>
+            )}
           </div>
           <div className="file-list">
             {questionSetsState === "loading" && <div className="empty-state"><b>読み込み中…</b></div>}
@@ -140,7 +155,7 @@ export function CourseView({
                   <b>{qs.title}</b>
                   <small>{qs.content.questions.length}問 ・ {DATE_FMT.format(new Date(qs.created_at))}作成</small>
                 </div>
-                <span className="private-pill">自分のみ</span>
+                <span className="private-pill">{shelf.shares.length > 0 ? "共有中" : "自分のみ"}</span>
                 <Icon name="arrow" />
               </button>
             ))}

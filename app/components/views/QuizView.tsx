@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/lib/supabase/types";
 import { getQuestionSet } from "@/lib/data/questionSets";
-import type { Navigate, Notify } from "../../types";
+import type { Navigate, Shelf } from "../../types";
 import { Button } from "../ui";
 import { QuestionPaper } from "@/components/QuestionPaper";
 import type { QuestionSet } from "@/lib/gemini/schema";
@@ -12,13 +12,14 @@ import type { QuestionSet } from "@/lib/gemini/schema";
 type Props = {
   supabase: SupabaseClient<Database>;
   navigate: Navigate;
-  notify: Notify;
   questionSetId: string | null;
-  shelfName?: string;
+  shelf: Shelf | null;
+  isOwner: boolean;
+  openShare: () => void;
   backToCourse: () => void;
 };
 
-export function QuizView({ supabase, navigate, notify, questionSetId, shelfName, backToCourse }: Props) {
+export function QuizView({ supabase, navigate, questionSetId, shelf, isOwner, openShare, backToCourse }: Props) {
   const [questionSet, setQuestionSet] = useState<QuestionSet | null>(null);
   const [loadState, setLoadState] = useState<"loading" | "error" | "ready">("loading");
   const state = questionSetId ? loadState : "error";
@@ -47,12 +48,14 @@ export function QuizView({ supabase, navigate, notify, questionSetId, shelfName,
     <>
       <div className="quiz-toolbar">
         <button className="back-link" onClick={backToCourse}>
-          ← {shelfName ?? "講義の棚"}
+          ← {shelf?.course_name ?? "講義の棚"}
         </button>
         <div>
-          <Button icon="share" onClick={() => notify("グループに共有しました")}>
-            共有
-          </Button>
+          {isOwner && (
+            <Button icon="share" onClick={openShare}>
+              {shelf && shelf.shares.length > 0 ? "共有設定" : "共有"}
+            </Button>
+          )}
           <Button primary icon="file" onClick={() => window.print()}>
             印刷 / PDF保存
           </Button>

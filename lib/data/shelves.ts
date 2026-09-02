@@ -1,6 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/lib/supabase/types";
-import type { Shelf } from "@/app/types";
+import type { Shelf, ShelfShare } from "@/app/types";
 import { unwrap } from "./utils";
 
 type DB = SupabaseClient<Database>;
@@ -42,19 +42,23 @@ export async function listShelves(supabase: DB): Promise<Shelf[]> {
 
   const materialCount = countBy(materials, (r) => r.shelf_id);
   const questionSetCount = countBy(questionSets, (r) => r.shelf_id);
-  const sharedGroupIds = new Map<string, string[]>();
+  const sharesByShelf = new Map<string, ShelfShare[]>();
   for (const s of shares) {
-    const list = sharedGroupIds.get(s.shelf_id) ?? [];
-    list.push(s.group_id);
-    sharedGroupIds.set(s.shelf_id, list);
+    const list = sharesByShelf.get(s.shelf_id) ?? [];
+    list.push({ group_id: s.group_id, visible: s.visible });
+    sharesByShelf.set(s.shelf_id, list);
   }
 
-  return shelves.map((row: ShelfRow) => ({
-    ...row,
-    materialCount: materialCount.get(row.id) ?? 0,
-    questionSetCount: questionSetCount.get(row.id) ?? 0,
-    sharedGroupIds: sharedGroupIds.get(row.id) ?? [],
-  }));
+  return shelves.map((row: ShelfRow) => {
+    const shelfShares = sharesByShelf.get(row.id) ?? [];
+    return {
+      ...row,
+      materialCount: materialCount.get(row.id) ?? 0,
+      questionSetCount: questionSetCount.get(row.id) ?? 0,
+      shares: shelfShares,
+      sharedGroupIds: shelfShares.map((s) => s.group_id),
+    };
+  });
 }
 
 export async function getShelf(supabase: DB, id: string): Promise<ShelfRow> {

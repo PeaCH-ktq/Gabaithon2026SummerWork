@@ -1,34 +1,130 @@
 "use client";
-import { useState } from "react";
-import { courses } from "../../demo-data";
-import type { Navigate, Notify } from "../../types";
+import { useEffect, useState } from "react";
+import type { SupabaseClient } from "@supabase/supabase-js";
+import type { Database } from "@/lib/supabase/types";
+import { listGroupMembers, leaveGroup } from "@/lib/data/groups";
+import { setShelfVisible } from "@/lib/data/shares";
+import type { GroupMember, GroupRow, LoadState, Notify, Shelf } from "../../types";
 import { Button, Icon } from "../ui";
 
-type Props = { navigate: Navigate; notify: Notify; openSchedule: () => void };
+type Props = {
+  supabase: SupabaseClient<Database>;
+  group: GroupRow | null;
+  groupsState: LoadState;
+  userId: string | null;
+  shelves: Shelf[];
+  openCourse: (shelfId: string) => void;
+  notify: Notify;
+  openSchedule: () => void;
+  openGroupModal: () => void;
+  onLeft: () => void;
+  onSharesChanged: () => void;
+};
 
-export function GroupView({ navigate, notify, openSchedule }: Props) {
+export function GroupView({ supabase, group, groupsState, userId, shelves, openCourse, notify, openSchedule, openGroupModal, onLeft, onSharesChanged }: Props) {
   const [inviteOpen, setInviteOpen] = useState(false);
-  const [hiddenShelves, setHiddenShelves] = useState<string[]>([]);
+  const [members, setMembers] = useState<GroupMember[]>([]);
+  const [membersState, setMembersState] = useState<LoadState>("loading");
+  const [leaving, setLeaving] = useState(false);
+  const [togglingShelfId, setTogglingShelfId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!group) return;
+    let active = true;
+    void (async () => {
+      await Promise.resolve();
+      if (!active) return;
+      setMembersState("loading");
+      try {
+        const rows = await listGroupMembers(supabase, group.id);
+        if (active) { setMembers(rows); setMembersState("ready"); }
+      } catch (err) {
+        console.error(err);
+        if (active) setMembersState("error");
+      }
+    })();
+    return () => { active = false; };
+  }, [supabase, group]);
+
+  if (!group) {
+    if (groupsState === "loading") {
+      return <p className="muted">グループを読み込んでいます…</p>;
+    }
+    return (
+      <div className="empty-state">
+        <b>グループに参加していません</b>
+        <p>
+          グループを作成するか、招待コードで参加してください。
+          <button className="text-link" onClick={openGroupModal}>グループを作成 / 参加する</button>
+        </p>
+      </div>
+    );
+  }
+
+  const sharedShelves = shelves.filter((shelf) => shelf.shares.some((s) => s.group_id === group.id));
+
+  async function toggleVisible(shelf: Shelf, visible: boolean) {
+    setTogglingShelfId(shelf.id);
+    try {
+      await setShelfVisible(supabase, shelf.id, group!.id, visible);
+      onSharesChanged();
+    } catch (err) {
+      notify(err instanceof Error ? err.message : "表示設定の更新に失敗しました");
+    } finally {
+      setTogglingShelfId(null);
+    }
+  }
+
+  async function handleLeave() {
+    if (leaving) return;
+    setLeaving(true);
+    try {
+      await leaveGroup(supabase, group!.id);
+      notify("グループを抜けました");
+      onLeft();
+    } catch (err) {
+      notify(err instanceof Error ? err.message : "グループの脱退に失敗しました");
+    } finally {
+      setLeaving(false);
+    }
+  }
+
   return (
     <>
       <header className="group-hero">
         <div className="avatar-stack">
-          <span>ゆ</span>
-          <span>あ</span>
-          <span>け</span>
-          <span>み</span>
-          <span>+3</span>
+          {members.slice(0, 4).map((m) => (
+            <span key={m.user_id}>{m.display_name.charAt(0) || "?"}</span>
+          ))}
+          {members.length > 4 && <span>+{members.length - 4}</span>}
         </div>
-        <p className="eyebrow">STUDY GROUP ・ 7 MEMBERS</p>
-        <h1>情報工学3年</h1>
-        <Button
-          icon="share"
-          onClick={() => setInviteOpen((value) => !value)}
-        >
+        <p className="eyebrow">STUDY GROUP ・ {membersState === "ready" ? `${members.length} MEMBERS` : "…"}</p>
+        <h1>{group.name}</h1>
+        <Button icon="share" onClick={() => setInviteOpen((value) => !value)}>
           招待する
         </Button>
+        <Button subtle onClick={() => void handleLeave()} disabled={leaving}>
+          {leaving ? "脱退中…" : "グループを抜ける"}
+        </Button>
       </header>
-      {inviteOpen && <section className="content-card invite-panel"><div><p className="eyebrow">INVITE CODE</p><h2>TANE-3Y7K</h2><p>このコードを友だちに共有してください。</p></div><Button primary onClick={() => { void navigator.clipboard?.writeText("TANE-3Y7K"); notify("招待コードをコピーしました"); }}>コードをコピー</Button></section>}
+      {inviteOpen && (
+        <section className="content-card invite-panel">
+          <div>
+            <p className="eyebrow">INVITE CODE</p>
+            <h2>{group.invite_code}</h2>
+            <p>このコードを友だちに共有してください。</p>
+          </div>
+          <Button
+            primary
+            onClick={() => {
+              void navigator.clipboard?.writeText(group.invite_code);
+              notify("招待コードをコピーしました");
+            }}
+          >
+            コードをコピー
+          </Button>
+        </section>
+      )}
       <div className="group-grid">
         <section className="content-card meetings">
           <div className="card-head">
@@ -77,22 +173,36 @@ export function GroupView({ navigate, notify, openSchedule }: Props) {
           <div className="copyright-note">
             講義資料そのものは共有されません。過去問などを共有する前に、再配布が許可されているか確認してください。
           </div>
-          {courses.slice(0, 3).map((c) => (
-            <div
-              className={`shared-shelf ${hiddenShelves.includes(c.code) ? "is-hidden" : ""}`}
-              key={c.code}
-            >
-              <span style={{ background: c.tab }} />
-              <div>
-                <b>{c.name}</b>
-                <small>
-                  問題集 {c.quizzes} ・ {c.shared ? "共有中" : "非表示"}
-                </small>
+          {sharedShelves.length === 0 && (
+            <div className="empty-state"><b>共有されている棚はまだありません</b><p>講義の棚から「グループに共有」を選んでください。</p></div>
+          )}
+          {sharedShelves.map((shelf) => {
+            const share = shelf.shares.find((s) => s.group_id === group.id)!;
+            const isOwner = shelf.owner_id === userId;
+            return (
+              <div className={`shared-shelf ${!share.visible ? "is-hidden" : ""}`} key={shelf.id}>
+                <span style={{ background: shelf.color }} />
+                <div>
+                  <b>{shelf.course_name}</b>
+                  <small>
+                    問題集 {shelf.questionSetCount} ・ {share.visible ? "共有中" : "非表示"}
+                  </small>
+                </div>
+                <button aria-label={`${shelf.course_name}を開く`} onClick={() => openCourse(shelf.id)}>
+                  <Icon name="arrow" />
+                </button>
+                {isOwner && (
+                  <button
+                    className="visibility-toggle"
+                    disabled={togglingShelfId === shelf.id}
+                    onClick={() => void toggleVisible(shelf, !share.visible)}
+                  >
+                    {share.visible ? "非表示" : "表示"}
+                  </button>
+                )}
               </div>
-              <button aria-label={`${c.name}を開く`} onClick={() => navigate("course")}><Icon name="arrow" /></button>
-              <button className="visibility-toggle" onClick={() => setHiddenShelves((items) => items.includes(c.code) ? items.filter((code) => code !== c.code) : [...items, c.code])}>{hiddenShelves.includes(c.code) ? "表示" : "非表示"}</button>
-            </div>
-          ))}
+            );
+          })}
         </aside>
         <section className="content-card activity">
           <p className="eyebrow">ACTIVITY</p>

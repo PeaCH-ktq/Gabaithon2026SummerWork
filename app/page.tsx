@@ -3,8 +3,10 @@
 import { useCallback, useEffect, useState } from "react";
 
 import { CreateQuizModal } from "./components/modals/CreateQuizModal";
+import { GroupModal } from "./components/modals/GroupModal";
 import { MaterialModal } from "./components/modals/MaterialModal";
 import { ScheduleModal } from "./components/modals/ScheduleModal";
+import { ShareModal } from "./components/modals/ShareModal";
 import { ShelfModal } from "./components/modals/ShelfModal";
 import { Sidebar } from "./components/Sidebar";
 import { Toast } from "./components/Toast";
@@ -16,11 +18,13 @@ import { GroupView } from "./components/views/GroupView";
 import { HomeView } from "./components/views/HomeView";
 import { QuizView } from "./components/views/QuizView";
 import { TasksView } from "./components/views/TasksView";
-import type { Assignment, LoadState, MaterialRow, Profile, QuestionSetRow, Shelf, ShelfFormValues, View } from "./types";
+import type { Assignment, GroupRow, LoadState, MaterialRow, Profile, QuestionSetRow, Shelf, ShelfFormValues, View } from "./types";
 import { createClient } from "@/lib/supabase/client";
 import { createShelf, listShelves, updateShelf } from "@/lib/data/shelves";
 import { listMaterialsByShelf, uploadMaterial } from "@/lib/data/materials";
 import { listQuestionSetsByShelf } from "@/lib/data/questionSets";
+import { createGroup, joinGroupByCode, listMyGroups } from "@/lib/data/groups";
+import { shareShelf, unshareShelf } from "@/lib/data/shares";
 import { pickShelfColor } from "@/lib/format/schedule";
 import { deadlines } from "./demo-data";
 import type { QuestionSet } from "@/lib/gemini/schema";
@@ -29,7 +33,8 @@ export default function Home() {
   const [supabase] = useState(() => createClient());
   // 現在の画面、モーダル、タブなど、UIの表示状態を管理する。
   const [view, setView] = useState<View>("home");
-  const [modal, setModal] = useState<"none" | "create" | "schedule" | "shelf" | "material">("none");
+  const [modal, setModal] = useState<"none" | "create" | "schedule" | "shelf" | "material" | "group" | "share">("none");
+  const [userId, setUserId] = useState<string | null>(null);
   const [shelves, setShelves] = useState<Shelf[]>([]);
   const [shelvesState, setShelvesState] = useState<LoadState>("loading");
   const [selectedShelfId, setSelectedShelfId] = useState<string | null>(null);
@@ -38,6 +43,13 @@ export default function Home() {
   const [materialsState, setMaterialsState] = useState<LoadState>("loading");
   const [courseQuestionSets, setCourseQuestionSets] = useState<Record<string, QuestionSetRow[]>>({});
   const [questionSetsState, setQuestionSetsState] = useState<LoadState>("loading");
+  const [groups, setGroups] = useState<GroupRow[]>([]);
+  const [groupsState, setGroupsState] = useState<LoadState>("loading");
+  const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null);
+  const [creatingGroup, setCreatingGroup] = useState(false);
+  const [joiningGroup, setJoiningGroup] = useState(false);
+  const [savingShare, setSavingShare] = useState(false);
+  const [shareShelfId, setShareShelfId] = useState<string | null>(null);
   const [assignments, setAssignments] = useState<Assignment[]>(deadlines);
   const [profile, setProfile] = useState<Profile>({ displayName: "ゆうた", faculty: "工学部", department: "情報工学科", email: "yuta@example.jp" });
   const [step, setStep] = useState(1);
@@ -70,8 +82,31 @@ export default function Home() {
   }, [supabase]);
 
   useEffect(() => {
-    void loadShelves();
+    void Promise.resolve().then(() => loadShelves());
   }, [loadShelves]);
+
+  useEffect(() => {
+    void supabase.auth.getUser().then(({ data }) => setUserId(data.user?.id ?? null));
+  }, [supabase]);
+
+  const loadGroups = useCallback(async () => {
+    setGroupsState("loading");
+    try {
+      const rows = await listMyGroups(supabase);
+      setGroups(rows);
+      setGroupsState("ready");
+      setSelectedGroupId((current) => (current && rows.some((g) => g.id === current) ? current : rows[0]?.id ?? null));
+      return rows;
+    } catch (err) {
+      console.error(err);
+      setGroupsState("error");
+      return [];
+    }
+  }, [supabase]);
+
+  useEffect(() => {
+    void Promise.resolve().then(() => loadGroups());
+  }, [loadGroups]);
 
   const loadMaterials = useCallback(
     async (shelfId: string) => {
@@ -144,6 +179,63 @@ export default function Home() {
     }
   }
 
+  async function handleCreateGroup(name: string) {
+    setCreatingGroup(true);
+    try {
+      const group = await createGroup(supabase, name);
+      await loadGroups();
+      setSelectedGroupId(group.id);
+      setModal("none");
+      navigate("group");
+      notify("グループを作成しました");
+    } catch (err) {
+      notify(err instanceof Error ? err.message : "グループの作成に失敗しました");
+    } finally {
+      setCreatingGroup(false);
+    }
+  }
+
+  async function handleJoinGroup(code: string) {
+    setJoiningGroup(true);
+    try {
+      const groupId = await joinGroupByCode(supabase, code);
+      await loadGroups();
+      setSelectedGroupId(groupId);
+      setModal("none");
+      navigate("group");
+      notify("グループに参加しました");
+    } catch (err) {
+      notify(err instanceof Error ? err.message : "グループへの参加に失敗しました");
+    } finally {
+      setJoiningGroup(false);
+    }
+  }
+
+  const shareShelfTarget = shelves.find((shelf) => shelf.id === shareShelfId) ?? null;
+
+  async function saveShares(groupIds: string[]) {
+    if (!shareShelfTarget) return;
+    setSavingShare(true);
+    try {
+      const current = new Set(shareShelfTarget.shares.map((s) => s.group_id));
+      const next = new Set(groupIds);
+      const toAdd = groupIds.filter((id) => !current.has(id));
+      const toRemove = [...current].filter((id) => !next.has(id));
+      await Promise.all([
+        ...toAdd.map((groupId) => shareShelf(supabase, shareShelfTarget.id, groupId)),
+        ...toRemove.map((groupId) => unshareShelf(supabase, shareShelfTarget.id, groupId)),
+      ]);
+      await loadShelves();
+      setModal("none");
+      setShareShelfId(null);
+      notify(groupIds.length > 0 ? "共有設定を保存しました" : "共有を解除しました");
+    } catch (err) {
+      notify(err instanceof Error ? err.message : "共有設定の保存に失敗しました");
+    } finally {
+      setSavingShare(false);
+    }
+  }
+
   // 問題作成フローを最初のステップから開く。講義未選択なら棚選択を促す。
   function startCreate() {
     if (!selectedShelf) {
@@ -169,10 +261,28 @@ export default function Home() {
     }
   }
 
+  const isOwner = selectedShelf ? selectedShelf.owner_id === userId : false;
+  const selectedGroup = groups.find((group) => group.id === selectedGroupId) ?? null;
+
+  function openShare(shelfId: string) {
+    setShareShelfId(shelfId);
+    setModal("share");
+  }
+
   return (
     <div className="app-shell">
       {/* 全画面で共通するサイドバーとメインナビゲーション。 */}
-      <Sidebar view={view} navigate={navigate} openShelves={openShelves} groupName="情報工学3年" displayName={profile.displayName} profileLabel={`${profile.faculty} ${profile.department}`} />
+      <Sidebar
+        view={view}
+        navigate={navigate}
+        openShelves={openShelves}
+        groups={groups}
+        selectedGroupId={selectedGroupId}
+        onSelectGroup={setSelectedGroupId}
+        onCreateGroup={() => setModal("group")}
+        displayName={profile.displayName}
+        profileLabel={`${profile.faculty} ${profile.department}`}
+      />
       <main className="main">
         {/* ホーム：今日の学習、講義棚、直近の締切。 */}
         {view === "home" && (
@@ -185,6 +295,7 @@ export default function Home() {
             openShelf={() => { setView("home"); setSelectedShelfId(null); setModal("shelf"); }}
             navigate={navigate}
             startCreate={startCreate}
+            userId={userId}
           />
         )}
         {/* 講義詳細：資料と作成済み問題集をタブで切り替える。 */}
@@ -200,11 +311,12 @@ export default function Home() {
             openMaterial={() => setModal("material")}
             openQuiz={openQuiz}
             editCourse={() => setModal("shelf")}
-            toggleShare={() => notify("共有はグループ画面から設定できます")}
+            openShare={() => openShare(selectedShelf.id)}
             activeTab={activeTab}
             setActiveTab={setActiveTab}
             navigate={navigate}
             startCreate={startCreate}
+            isOwner={isOwner}
           />
         )}
         {view === "course" && !selectedShelf && (
@@ -215,9 +327,10 @@ export default function Home() {
           <QuizView
             supabase={supabase}
             navigate={navigate}
-            notify={notify}
             questionSetId={selectedQuestionSetId}
-            shelfName={selectedShelf?.course_name}
+            shelf={selectedShelf}
+            isOwner={isOwner}
+            openShare={() => selectedShelf && openShare(selectedShelf.id)}
             backToCourse={() => navigate("course")}
           />
         )}
@@ -226,9 +339,17 @@ export default function Home() {
         {/* グループ：勉強会、共有棚、メンバーの活動記録。 */}
         {view === "group" && (
           <GroupView
-            navigate={navigate}
+            supabase={supabase}
+            group={selectedGroup}
+            groupsState={groupsState}
+            userId={userId}
+            shelves={shelves}
+            openCourse={openCourse}
             notify={notify}
             openSchedule={() => setModal("schedule")}
+            openGroupModal={() => setModal("group")}
+            onLeft={() => { void loadGroups(); }}
+            onSharesChanged={() => { void loadShelves(); }}
           />
         )}
         {view === "account" && <AccountView navigate={navigate} notify={notify} profile={profile} />}
@@ -270,6 +391,27 @@ export default function Home() {
             setModal("none");
             notify(`「${material.file_name}」を追加しました`);
           }}
+        />
+      )}
+      {/* グループの作成・招待コード参加。 */}
+      {modal === "group" && (
+        <GroupModal
+          creating={creatingGroup}
+          joining={joiningGroup}
+          onClose={() => setModal("none")}
+          onCreate={(name) => void handleCreateGroup(name)}
+          onJoin={(code) => void handleJoinGroup(code)}
+        />
+      )}
+      {/* 棚をグループへ共有する設定。 */}
+      {modal === "share" && shareShelfTarget && (
+        <ShareModal
+          shelf={shareShelfTarget}
+          groups={groups}
+          saving={savingShare}
+          onClose={() => { setModal("none"); setShareShelfId(null); }}
+          onSave={(groupIds) => void saveShares(groupIds)}
+          onCreateGroup={() => setModal("group")}
         />
       )}
       {/* 保存や共有などの操作結果を一時的に知らせる。 */}
