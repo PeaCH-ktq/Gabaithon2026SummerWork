@@ -121,17 +121,20 @@ export function Button({
   subtle,
   onClick,
   icon,
+  disabled,
 }: {
   children: ReactNode;
   primary?: boolean;
   subtle?: boolean;
   onClick?: () => void;
   icon?: IconName;
+  disabled?: boolean;
 }) {
   return (
     <button
       className={`button ${primary ? "primary" : ""} ${subtle ? "subtle" : ""}`}
       onClick={onClick}
+      disabled={disabled}
     >
       {icon && <Icon name={icon} size={16} />}
       <span>{children}</span>

@@ -66,6 +66,7 @@
   .main { margin: 0; padding: 0; max-width: none; width: 100%; }
 }
 
+.muted { color: var(--muted); padding: 12px 0; }
 .empty-state { padding: 34px; text-align: center; color: var(--muted); }
 .empty-state b { color: var(--ink); }
 .inline-form { margin-bottom: 24px; }

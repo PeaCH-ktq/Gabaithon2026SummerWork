@@ -1,10 +1,11 @@
 import type React from "react";
-import type { Assignment, Course, Navigate } from "../../types";
+import type { Assignment, LoadState, Navigate, Notify, Shelf } from "../../types";
+import { formatSchedule } from "@/lib/format/schedule";
 import { Button, Icon } from "../ui";
 
-type Props = { courses: Course[]; assignments: Assignment[]; navigate: Navigate; openCourse: (code: string) => void; startCreate: () => void; openShelf: () => void };
+type Props = { shelves: Shelf[]; shelvesState: LoadState; assignments: Assignment[]; navigate: Navigate; openCourse: (id: string) => void; startCreate: () => void; openShelf: () => void; notify: Notify; userId: string | null };
 
-export function HomeView({ courses, assignments, navigate, openCourse, startCreate, openShelf }: Props) {
+export function HomeView({ shelves, shelvesState, assignments, navigate, openCourse, startCreate, openShelf, notify, userId }: Props) {
   const today = new Intl.DateTimeFormat("ja-JP", { timeZone: "Asia/Tokyo", year: "numeric", month: "long", day: "numeric", weekday: "long" }).format(new Date());
   const nextSessions = [
     { date: "9月6日（日）", time: "14:00 – 18:00", title: "データベース論 中間対策", place: "中央図書館 グループ学習室B" },
@@ -38,31 +39,36 @@ export function HomeView({ courses, assignments, navigate, openCourse, startCrea
           </div>
           <Button icon="plus" onClick={openShelf}>棚を追加</Button>
         </div>
+        {shelvesState === "loading" && <p className="muted">棚を読み込んでいます…</p>}
+        {shelvesState === "error" && <p className="muted">棚の読み込みに失敗しました。再読み込みしてください。</p>}
+        {shelvesState === "ready" && shelves.length === 0 && (
+          <div className="empty-state"><b>棚はまだありません</b><p>「棚を追加」から最初の講義を登録してください。</p></div>
+        )}
         <div className="shelf-grid">
-          {courses.map((course) => (
+          {shelves.map((shelf) => (
             <button
-              key={course.code}
+              key={shelf.id}
               className="shelf"
-              style={{ "--tab": course.tab } as React.CSSProperties}
-              onClick={() => openCourse(course.code)}
+              style={{ "--tab": shelf.color } as React.CSSProperties}
+              onClick={() => openCourse(shelf.id)}
             >
               <div className="shelf-top">
-                <span>{course.code}</span>
-                {course.shared && (
+                <span>{shelf.course_code ?? "コード未設定"}</span>
+                {shelf.shares.length > 0 && (
                   <span className="shared">
                     <Icon name="users" size={12} />
-                    共有中
+                    {shelf.owner_id === userId ? "共有中" : "共有された棚"}
                   </span>
                 )}
               </div>
-              <h3>{course.name}</h3>
-              <p>{course.professor}</p>
+              <h3>{shelf.course_name}</h3>
+              <p>{shelf.professor ?? "担当教員未設定"} ・ {formatSchedule(shelf.day_of_week, shelf.period)}</p>
               <div className="shelf-meta">
                 <span>
-                  <b>{course.docs}</b> 資料
+                  <b>{shelf.materialCount}</b> 資料
                 </span>
                 <span>
-                  <b>{course.quizzes}</b> 問題集
+                  <b>{shelf.questionSetCount}</b> 問題集
                 </span>
                 <Icon name="arrow" size={17} />
               </div>

@@ -108,6 +108,50 @@
   background: #57ad7e;
   box-shadow: 0 0 0 3px #dff2e7;
 }
+/* 所属グループが複数あるときに切り替えるポップオーバー。 */
+.group-switcher-wrap { position: relative; }
+.group-switcher-toggle {
+  margin-left: auto;
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  transform: rotate(90deg);
+  color: #a6a4ae;
+}
+.group-switcher-toggle:hover { background: #e9e7e1; }
+.group-switcher {
+  position: absolute;
+  left: 8px;
+  right: -4px;
+  top: calc(100% + 4px);
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  box-shadow: 0 14px 30px #18182326;
+  padding: 6px;
+  z-index: 30;
+  list-style: none;
+}
+.group-switcher li { margin: 0; }
+.group-switcher button {
+  width: 100%;
+  border: 0;
+  background: none;
+  text-align: left;
+  padding: 9px 10px;
+  border-radius: 8px;
+  font-size: 11px;
+  color: #747487;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+.group-switcher button:hover { background: #f2f0eb; color: var(--ink); }
+.group-switcher button.active { background: var(--soft); color: var(--dark); font-weight: 700; }
+.group-switcher-add { color: var(--indigo) !important; font-weight: 700; }
 /* ログイン中のユーザー情報を表示するサイドバー下部。 */
 .sidebar-foot {
   margin-top: auto;

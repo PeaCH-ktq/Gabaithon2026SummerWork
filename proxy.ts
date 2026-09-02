@@ -33,9 +33,39 @@ export async function proxy(request: NextRequest) {
     },
   );
 
-  // トークンの有効期限が近ければ更新する。戻り値は使わないが、呼び出し自体が
-  // Cookie の書き換え（上記 setAll）を引き起こす。
-  await supabase.auth.getUser();
+  // トークンの有効期限が近ければ更新する。ついでにログイン状態も判定する。
+  // 呼び出し自体が Cookie の書き換え（上記 setAll）を引き起こす。
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  const { pathname } = request.nextUrl;
+  // 認証なしでアクセスしてよいパス。OAuth コールバック・ログイン・ログアウト・API は除外。
+  const isPublic =
+    pathname === "/login" ||
+    pathname === "/logout" ||
+    pathname.startsWith("/auth") ||
+    pathname.startsWith("/api");
+
+  // 未ログインで保護ページを開いたら /login へ送る（元のパスを next で保持）。
+  if (!user && !isPublic) {
+    const url = request.nextUrl.clone();
+    url.pathname = "/login";
+    url.search = "";
+    url.searchParams.set("next", pathname);
+    // コールバックがエラーを付けて戻してきた場合はログイン画面まで引き継ぐ。
+    const authError = request.nextUrl.searchParams.get("auth_error");
+    if (authError) url.searchParams.set("auth_error", authError);
+    return NextResponse.redirect(url);
+  }
+
+  // ログイン済みで /login を開いたらアプリ本体へ戻す。
+  if (user && pathname === "/login") {
+    const url = request.nextUrl.clone();
+    url.pathname = "/";
+    url.search = "";
+    return NextResponse.redirect(url);
+  }
 
   return response;
 }

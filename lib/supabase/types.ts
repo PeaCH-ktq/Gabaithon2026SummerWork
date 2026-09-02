@@ -3,6 +3,12 @@ import type { QuestionSet } from "@/lib/gemini/schema";
 /**
  * `supabase gen types typescript` の生成物に差し替える暫定の型。
  * `question_sets.content` は `QuestionSet`（`lib/gemini/schema.ts`）をそのまま使う。
+ *
+ * `Relationships: []` と `public.Views` は、`@supabase/postgrest-js` の
+ * `GenericTable` / `GenericSchema` 制約
+ * （`node_modules/@supabase/postgrest-js/src/types/common/common.ts`）を満たすために必要。
+ * 無いと `.from(...)` の型推論が `never` に落ちる。
+ * `public.Functions` は `supabase.rpc(...)` の型付けのため実定義している。
  */
 export interface Database {
   public: {
@@ -23,6 +29,7 @@ export interface Database {
           display_name: string;
           avatar_url: string | null;
         }>;
+        Relationships: [];
       };
       shelves: {
         Row: {
@@ -33,6 +40,10 @@ export interface Database {
           term: string | null;
           day_of_week: number | null;
           period: number | null;
+          course_code: string | null;
+          professor: string | null;
+          room: string | null;
+          color: string;
           created_at: string;
         };
         Insert: {
@@ -42,6 +53,10 @@ export interface Database {
           term?: string | null;
           day_of_week?: number | null;
           period?: number | null;
+          course_code?: string | null;
+          professor?: string | null;
+          room?: string | null;
+          color?: string;
         };
         Update: Partial<{
           course_name: string;
@@ -49,7 +64,12 @@ export interface Database {
           term: string | null;
           day_of_week: number | null;
           period: number | null;
+          course_code: string | null;
+          professor: string | null;
+          room: string | null;
+          color: string;
         }>;
+        Relationships: [];
       };
       materials: {
         Row: {
@@ -63,6 +83,7 @@ export interface Database {
           created_at: string;
         };
         Insert: {
+          id?: string;
           shelf_id: string;
           owner_id: string;
           storage_path: string;
@@ -73,6 +94,7 @@ export interface Database {
         Update: Partial<{
           file_name: string;
         }>;
+        Relationships: [];
       };
       question_sets: {
         Row: {
@@ -95,6 +117,7 @@ export interface Database {
           title: string;
           content: QuestionSet;
         }>;
+        Relationships: [];
       };
       groups: {
         Row: {
@@ -112,6 +135,7 @@ export interface Database {
         Update: Partial<{
           name: string;
         }>;
+        Relationships: [];
       };
       group_members: {
         Row: {
@@ -126,6 +150,7 @@ export interface Database {
           role?: "owner" | "member";
         };
         Update: never;
+        Relationships: [];
       };
       shelf_shares: {
         Row: {
@@ -143,6 +168,7 @@ export interface Database {
         Update: Partial<{
           visible: boolean;
         }>;
+        Relationships: [];
       };
       question_set_shares: {
         Row: {
@@ -156,6 +182,7 @@ export interface Database {
           group_id: string;
         };
         Update: never;
+        Relationships: [];
       };
       study_sessions: {
         Row: {
@@ -182,6 +209,7 @@ export interface Database {
           starts_at: string;
           ends_at: string;
         }>;
+        Relationships: [];
       };
       assignments: {
         Row: {
@@ -204,6 +232,7 @@ export interface Database {
           title: string;
           due_at: string;
         }>;
+        Relationships: [];
       };
       assignment_reports: {
         Row: {
@@ -224,6 +253,7 @@ export interface Database {
           minutes_spent: number;
           comment: string | null;
         }>;
+        Relationships: [];
       };
       google_credentials: {
         Row: {
@@ -238,6 +268,7 @@ export interface Database {
         Update: Partial<{
           refresh_token: string;
         }>;
+        Relationships: [];
       };
       calendar_events: {
         Row: {
@@ -253,6 +284,22 @@ export interface Database {
           google_event_id: string;
         };
         Update: never;
+        Relationships: [];
+      };
+    };
+    Views: Record<string, never>;
+    Functions: {
+      is_group_member: {
+        Args: { gid: string };
+        Returns: boolean;
+      };
+      join_group_by_code: {
+        Args: { code: string };
+        Returns: string;
+      };
+      is_shelf_shared: {
+        Args: { sid: string };
+        Returns: boolean;
       };
     };
   };

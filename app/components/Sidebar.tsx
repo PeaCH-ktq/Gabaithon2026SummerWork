@@ -1,9 +1,37 @@
-import type { Navigate, View } from "../types";
+"use client";
+
+import Link from "next/link";
+import { useEffect, useRef, useState } from "react";
+
+import type { GroupRow, Navigate, View } from "../types";
 import { Icon, type IconName } from "./ui";
 
-type Props = { view: View; navigate: Navigate; openShelves: () => void; groupName: string; displayName: string; profileLabel: string };
+type Props = {
+  view: View;
+  navigate: Navigate;
+  openShelves: () => void;
+  groups: GroupRow[];
+  selectedGroupId: string | null;
+  onSelectGroup: (id: string) => void;
+  onCreateGroup: () => void;
+  displayName: string;
+  profileLabel: string;
+};
 
-export function Sidebar({ view, navigate, openShelves, groupName, displayName, profileLabel }: Props) {
+export function Sidebar({ view, navigate, openShelves, groups, selectedGroupId, onSelectGroup, onCreateGroup, displayName, profileLabel }: Props) {
+  const [switcherOpen, setSwitcherOpen] = useState(false);
+  const switcherRef = useRef<HTMLDivElement>(null);
+  const selectedGroup = groups.find((g) => g.id === selectedGroupId) ?? null;
+
+  useEffect(() => {
+    if (!switcherOpen) return;
+    function onDocMouseDown(e: MouseEvent) {
+      if (switcherRef.current && !switcherRef.current.contains(e.target as Node)) setSwitcherOpen(false);
+    }
+    document.addEventListener("mousedown", onDocMouseDown);
+    return () => document.removeEventListener("mousedown", onDocMouseDown);
+  }, [switcherOpen]);
+
   return (
     <aside className="sidebar">
       <button
@@ -37,14 +65,51 @@ export function Sidebar({ view, navigate, openShelves, groupName, displayName, p
           </button>
         ))}
         <span className="nav-label second">TOGETHER</span>
-        <button
-          className={`nav-item ${view === "group" ? "active" : ""}`}
-          onClick={() => navigate("group")}
-        >
-          <Icon name="users" />
-          <span>{groupName}</span>
-          <span className="online-dot" />
-        </button>
+        <div className="group-switcher-wrap" ref={switcherRef}>
+          <button
+            className={`nav-item ${view === "group" ? "active" : ""}`}
+            onClick={() => {
+              if (selectedGroup) {
+                navigate("group");
+              } else {
+                onCreateGroup();
+              }
+            }}
+          >
+            <Icon name="users" />
+            <span>{selectedGroup?.name ?? "グループを作る"}</span>
+            {groups.length > 1 && (
+              <span
+                role="button"
+                aria-label="グループを切り替える"
+                className="group-switcher-toggle"
+                onClick={(e) => { e.stopPropagation(); setSwitcherOpen((v) => !v); }}
+              >
+                <Icon name="arrow" size={12} />
+              </span>
+            )}
+            {groups.length <= 1 && selectedGroup && <span className="online-dot" />}
+          </button>
+          {switcherOpen && (
+            <ul className="group-switcher">
+              {groups.map((group) => (
+                <li key={group.id}>
+                  <button
+                    className={group.id === selectedGroupId ? "active" : ""}
+                    onClick={() => { onSelectGroup(group.id); setSwitcherOpen(false); navigate("group"); }}
+                  >
+                    {group.name}
+                  </button>
+                </li>
+              ))}
+              <li>
+                <button className="group-switcher-add" onClick={() => { setSwitcherOpen(false); onCreateGroup(); }}>
+                  <Icon name="plus" size={13} /> グループを作成 / 参加
+                </button>
+              </li>
+            </ul>
+          )}
+        </div>
         <span className="nav-label second">ACCOUNT</span>
         <button className={`nav-item ${view === "account" ? "active" : ""}`} onClick={() => navigate("account")}>
           <Icon name="users" />
@@ -52,11 +117,14 @@ export function Sidebar({ view, navigate, openShelves, groupName, displayName, p
         </button>
       </nav>
       <div className="sidebar-foot">
-        <span className="avatar indigo">ゆ</span>
+        <span className="avatar indigo">{displayName.charAt(0) || "?"}</span>
         <span>
           <b>{displayName}</b>
           <small>{profileLabel}</small>
         </span>
+        <Link href="/logout" aria-label="ログアウト" title="ログアウト">
+          <Icon name="more" />
+        </Link>
       </div>
     </aside>
   );
