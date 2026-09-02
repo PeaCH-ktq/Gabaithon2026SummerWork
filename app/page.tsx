@@ -18,7 +18,17 @@ import { GroupView } from "./components/views/GroupView";
 import { HomeView } from "./components/views/HomeView";
 import { QuizView } from "./components/views/QuizView";
 import { TasksView } from "./components/views/TasksView";
-import type { Assignment, GroupRow, LoadState, MaterialRow, Profile, QuestionSetRow, Shelf, ShelfFormValues, View } from "./types";
+import type {
+  Assignment,
+  GroupRow,
+  LoadState,
+  MaterialRow,
+  Profile,
+  QuestionSetRow,
+  Shelf,
+  ShelfFormValues,
+  View,
+} from "./types";
 import { createClient } from "@/lib/supabase/client";
 import { createShelf, listShelves, updateShelf } from "@/lib/data/shelves";
 import { listMaterialsByShelf, uploadMaterial } from "@/lib/data/materials";
@@ -33,16 +43,23 @@ export default function Home() {
   const [supabase] = useState(() => createClient());
   // 現在の画面、モーダル、タブなど、UIの表示状態を管理する。
   const [view, setView] = useState<View>("home");
-  const [modal, setModal] = useState<"none" | "create" | "schedule" | "shelf" | "material" | "group" | "share">("none");
+  const [modal, setModal] = useState<
+    "none" | "create" | "schedule" | "shelf" | "material" | "group" | "share"
+  >("none");
   const [userId, setUserId] = useState<string | null>(null);
   const [shelves, setShelves] = useState<Shelf[]>([]);
   const [shelvesState, setShelvesState] = useState<LoadState>("loading");
   const [selectedShelfId, setSelectedShelfId] = useState<string | null>(null);
   const [savingShelf, setSavingShelf] = useState(false);
-  const [courseMaterials, setCourseMaterials] = useState<Record<string, MaterialRow[]>>({});
+  const [courseMaterials, setCourseMaterials] = useState<
+    Record<string, MaterialRow[]>
+  >({});
   const [materialsState, setMaterialsState] = useState<LoadState>("loading");
-  const [courseQuestionSets, setCourseQuestionSets] = useState<Record<string, QuestionSetRow[]>>({});
-  const [questionSetsState, setQuestionSetsState] = useState<LoadState>("loading");
+  const [courseQuestionSets, setCourseQuestionSets] = useState<
+    Record<string, QuestionSetRow[]>
+  >({});
+  const [questionSetsState, setQuestionSetsState] =
+    useState<LoadState>("loading");
   const [groups, setGroups] = useState<GroupRow[]>([]);
   const [groupsState, setGroupsState] = useState<LoadState>("loading");
   const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null);
@@ -51,12 +68,19 @@ export default function Home() {
   const [savingShare, setSavingShare] = useState(false);
   const [shareShelfId, setShareShelfId] = useState<string | null>(null);
   const [assignments, setAssignments] = useState<Assignment[]>(deadlines);
-  const [profile, setProfile] = useState<Profile>({ displayName: "ゆうた", faculty: "工学部", department: "情報工学科", email: "yuta@example.jp" });
+  const [profile, setProfile] = useState<Profile>({
+    displayName: "ゆうた",
+    faculty: "工学部",
+    department: "情報工学科",
+    email: "yuta@example.jp",
+  });
   const [step, setStep] = useState(1);
   const [toast, setToast] = useState("");
   const [activeTab, setActiveTab] = useState<"material" | "quiz">("material");
   const [generating, setGenerating] = useState(false);
-  const [selectedQuestionSetId, setSelectedQuestionSetId] = useState<string | null>(null);
+  const [selectedQuestionSetId, setSelectedQuestionSetId] = useState<
+    string | null
+  >(null);
   // 操作結果を画面下部のトースト通知に渡す。
   const notify = (message: string) => setToast(message);
 
@@ -86,7 +110,9 @@ export default function Home() {
   }, [loadShelves]);
 
   useEffect(() => {
-    void supabase.auth.getUser().then(({ data }) => setUserId(data.user?.id ?? null));
+    void supabase.auth
+      .getUser()
+      .then(({ data }) => setUserId(data.user?.id ?? null));
   }, [supabase]);
 
   const loadGroups = useCallback(async () => {
@@ -95,7 +121,11 @@ export default function Home() {
       const rows = await listMyGroups(supabase);
       setGroups(rows);
       setGroupsState("ready");
-      setSelectedGroupId((current) => (current && rows.some((g) => g.id === current) ? current : rows[0]?.id ?? null));
+      setSelectedGroupId((current) =>
+        current && rows.some((g) => g.id === current)
+          ? current
+          : (rows[0]?.id ?? null),
+      );
       return rows;
     } catch (err) {
       console.error(err);
@@ -144,12 +174,17 @@ export default function Home() {
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
-  const selectedShelf = shelves.find((shelf) => shelf.id === selectedShelfId) ?? null;
+  const selectedShelf =
+    shelves.find((shelf) => shelf.id === selectedShelfId) ?? null;
 
-  function openCourse(id: string) {
+  function selectCourse(id: string) {
     setSelectedShelfId(id);
     void loadMaterials(id);
     void loadQuestionSets(id);
+  }
+
+  function openCourse(id: string) {
+    selectCourse(id);
     navigate("course");
   }
 
@@ -159,7 +194,13 @@ export default function Home() {
 
   function openShelves() {
     setView("home");
-    window.setTimeout(() => document.getElementById("course-shelves")?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
+    window.setTimeout(
+      () =>
+        document
+          .getElementById("course-shelves")
+          ?.scrollIntoView({ behavior: "smooth", block: "start" }),
+      0,
+    );
   }
 
   async function saveShelf(values: ShelfFormValues, id?: string) {
@@ -167,7 +208,10 @@ export default function Home() {
     try {
       const row = id
         ? await updateShelf(supabase, id, values)
-        : await createShelf(supabase, { ...values, color: pickShelfColor(shelves.length) });
+        : await createShelf(supabase, {
+            ...values,
+            color: pickShelfColor(shelves.length),
+          });
       await loadShelves();
       setSelectedShelfId(row.id);
       setModal("none");
@@ -189,7 +233,9 @@ export default function Home() {
       navigate("group");
       notify("グループを作成しました");
     } catch (err) {
-      notify(err instanceof Error ? err.message : "グループの作成に失敗しました");
+      notify(
+        err instanceof Error ? err.message : "グループの作成に失敗しました",
+      );
     } finally {
       setCreatingGroup(false);
     }
@@ -205,13 +251,16 @@ export default function Home() {
       navigate("group");
       notify("グループに参加しました");
     } catch (err) {
-      notify(err instanceof Error ? err.message : "グループへの参加に失敗しました");
+      notify(
+        err instanceof Error ? err.message : "グループへの参加に失敗しました",
+      );
     } finally {
       setJoiningGroup(false);
     }
   }
 
-  const shareShelfTarget = shelves.find((shelf) => shelf.id === shareShelfId) ?? null;
+  const shareShelfTarget =
+    shelves.find((shelf) => shelf.id === shareShelfId) ?? null;
 
   async function saveShares(groupIds: string[]) {
     if (!shareShelfTarget) return;
@@ -222,15 +271,23 @@ export default function Home() {
       const toAdd = groupIds.filter((id) => !current.has(id));
       const toRemove = [...current].filter((id) => !next.has(id));
       await Promise.all([
-        ...toAdd.map((groupId) => shareShelf(supabase, shareShelfTarget.id, groupId)),
-        ...toRemove.map((groupId) => unshareShelf(supabase, shareShelfTarget.id, groupId)),
+        ...toAdd.map((groupId) =>
+          shareShelf(supabase, shareShelfTarget.id, groupId),
+        ),
+        ...toRemove.map((groupId) =>
+          unshareShelf(supabase, shareShelfTarget.id, groupId),
+        ),
       ]);
       await loadShelves();
       setModal("none");
       setShareShelfId(null);
-      notify(groupIds.length > 0 ? "共有設定を保存しました" : "共有を解除しました");
+      notify(
+        groupIds.length > 0 ? "共有設定を保存しました" : "共有を解除しました",
+      );
     } catch (err) {
-      notify(err instanceof Error ? err.message : "共有設定の保存に失敗しました");
+      notify(
+        err instanceof Error ? err.message : "共有設定の保存に失敗しました",
+      );
     } finally {
       setSavingShare(false);
     }
@@ -247,7 +304,10 @@ export default function Home() {
     setGenerating(false);
     setModal("create");
   }
-  function finishGeneration(questionSetId: string | null, questionSet: QuestionSet) {
+  function finishGeneration(
+    questionSetId: string | null,
+    questionSet: QuestionSet,
+  ) {
     setSelectedQuestionSetId(questionSetId);
     setModal("none");
     setGenerating(false);
@@ -257,12 +317,15 @@ export default function Home() {
     if (questionSetId) {
       notify(`${questionSet.questions.length}問の問題集を作成しました`);
     } else {
-      notify(`${questionSet.questions.length}問の問題集を作成しましたが、保存に失敗しました`);
+      notify(
+        `${questionSet.questions.length}問の問題集を作成しましたが、保存に失敗しました`,
+      );
     }
   }
 
   const isOwner = selectedShelf ? selectedShelf.owner_id === userId : false;
-  const selectedGroup = groups.find((group) => group.id === selectedGroupId) ?? null;
+  const selectedGroup =
+    groups.find((group) => group.id === selectedGroupId) ?? null;
 
   function openShare(shelfId: string) {
     setShareShelfId(shelfId);
@@ -290,9 +353,28 @@ export default function Home() {
             shelves={shelves}
             shelvesState={shelvesState}
             assignments={assignments}
-            notify={notify}
-            openCourse={openCourse}
-            openShelf={() => { setView("home"); setSelectedShelfId(null); setModal("shelf"); }}
+            selectShelf={selectCourse}
+            materialsByShelf={courseMaterials}
+            materialsState={materialsState}
+            questionSetsByShelf={courseQuestionSets}
+            questionSetsState={questionSetsState}
+            activeTab={activeTab}
+            setActiveTab={setActiveTab}
+            openMaterial={() => setModal("material")}
+            openQuiz={openQuiz}
+            // 編集対象の棚IDを同期してからモーダルを開く。
+            // 「棚を追加」でselectedShelfIdがnullにリセットされた後でも、
+            // HomeViewが開いている棚(openedShelf)を正しく編集できるようにする。
+            editShelf={(shelfId) => {
+              setSelectedShelfId(shelfId);
+              setModal("shelf");
+            }}
+            openShare={openShare}
+            openShelf={() => {
+              setView("home");
+              setSelectedShelfId(null);
+              setModal("shelf");
+            }}
             navigate={navigate}
             startCreate={startCreate}
             userId={userId}
@@ -306,11 +388,18 @@ export default function Home() {
             materialsState={materialsState}
             questionSets={courseQuestionSets[selectedShelf.id] ?? []}
             questionSetsState={questionSetsState}
-            assignments={assignments.filter((assignment) => assignment.course === selectedShelf.course_name)}
+            assignments={assignments.filter(
+              (assignment) => assignment.course === selectedShelf.course_name,
+            )}
             openShelves={openShelves}
             openMaterial={() => setModal("material")}
             openQuiz={openQuiz}
-            editCourse={() => setModal("shelf")}
+            // CourseViewのshelfはselectedShelfそのものであり、
+            // 講義詳細表示中はすでに同期済みなので明示的に再指定しておく。
+            editCourse={() => {
+              setSelectedShelfId(selectedShelf.id);
+              setModal("shelf");
+            }}
             openShare={() => openShare(selectedShelf.id)}
             activeTab={activeTab}
             setActiveTab={setActiveTab}
@@ -320,7 +409,12 @@ export default function Home() {
           />
         )}
         {view === "course" && !selectedShelf && (
-          <p className="muted">棚が見つかりません。<button className="text-link" onClick={() => navigate("home")}>棚の一覧へ戻る</button></p>
+          <p className="muted">
+            棚が見つかりません。
+            <button className="text-link" onClick={() => navigate("home")}>
+              棚の一覧へ戻る
+            </button>
+          </p>
         )}
         {/* 問題集：印刷やPDF保存に対応した問題用紙。 */}
         {view === "quiz" && (
@@ -335,7 +429,20 @@ export default function Home() {
           />
         )}
         {/* 課題：未完了と完了済みのタスクを一覧表示する。 */}
-        {view === "tasks" && <TasksView notify={notify} items={assignments} setItems={setAssignments} courseNames={shelves.map((shelf) => shelf.course_name)} openCourse={(courseName) => { const shelf = shelves.find((item) => item.course_name === courseName); if (shelf) openCourse(shelf.id); }} />}
+        {view === "tasks" && (
+          <TasksView
+            notify={notify}
+            items={assignments}
+            setItems={setAssignments}
+            courseNames={shelves.map((shelf) => shelf.course_name)}
+            openCourse={(courseName) => {
+              const shelf = shelves.find(
+                (item) => item.course_name === courseName,
+              );
+              if (shelf) openCourse(shelf.id);
+            }}
+          />
+        )}
         {/* グループ：勉強会、共有棚、メンバーの活動記録。 */}
         {view === "group" && (
           <GroupView
@@ -348,12 +455,28 @@ export default function Home() {
             notify={notify}
             openSchedule={() => setModal("schedule")}
             openGroupModal={() => setModal("group")}
-            onLeft={() => { void loadGroups(); }}
-            onSharesChanged={() => { void loadShelves(); }}
+            onLeft={() => {
+              void loadGroups();
+            }}
+            onSharesChanged={() => {
+              void loadShelves();
+            }}
           />
         )}
-        {view === "account" && <AccountView navigate={navigate} notify={notify} profile={profile} />}
-        {view === "profile-edit" && <ProfileEditView navigate={navigate} profile={profile} onSave={(next) => { setProfile(next); navigate("account"); notify("プロフィールを更新しました"); }} />}
+        {view === "account" && (
+          <AccountView navigate={navigate} notify={notify} profile={profile} />
+        )}
+        {view === "profile-edit" && (
+          <ProfileEditView
+            navigate={navigate}
+            profile={profile}
+            onSave={(next) => {
+              setProfile(next);
+              navigate("account");
+              notify("プロフィールを更新しました");
+            }}
+          />
+        )}
         {view === "logout" && <LogoutView navigate={navigate} />}
       </main>
       {/* 資料と出題条件を選択する、2段階の問題作成モーダル。 */}
@@ -375,7 +498,7 @@ export default function Home() {
       )}
       {modal === "shelf" && (
         <ShelfModal
-          initial={view === "course" ? selectedShelf ?? undefined : undefined}
+          initial={selectedShelf ?? undefined}
           saving={savingShelf}
           onClose={() => setModal("none")}
           onSave={saveShelf}
@@ -385,7 +508,11 @@ export default function Home() {
         <MaterialModal
           onClose={() => setModal("none")}
           onUpload={async (file) => {
-            const material = await uploadMaterial(supabase, selectedShelf.id, file);
+            const material = await uploadMaterial(
+              supabase,
+              selectedShelf.id,
+              file,
+            );
             await loadMaterials(selectedShelf.id);
             await loadShelves();
             setModal("none");
@@ -409,7 +536,10 @@ export default function Home() {
           shelf={shareShelfTarget}
           groups={groups}
           saving={savingShare}
-          onClose={() => { setModal("none"); setShareShelfId(null); }}
+          onClose={() => {
+            setModal("none");
+            setShareShelfId(null);
+          }}
           onSave={(groupIds) => void saveShares(groupIds)}
           onCreateGroup={() => setModal("group")}
         />

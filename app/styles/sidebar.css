@@ -183,9 +183,14 @@
   .sidebar { inset: auto 0 0; width: 100%; height: 70px; padding: 7px 10px; border: 0; border-top: 1px solid var(--line); }
   .brand,.nav-label,.sidebar-foot { display: none; }
   .sidebar nav { height: 100%; flex-direction: row; }
+  .nav-item,.group-switcher-wrap { flex: 0 0 20%; min-width: 0; }
+  .group-switcher-wrap { display: flex; }
+  /* グループだけはラッパーの中にあるため、内側で再び20%に縮まないよう全幅を使う。 */
+  .group-switcher-wrap>.nav-item { flex: 1 1 auto; width: 100%; }
   .nav-item { flex-direction: column; justify-content: center; gap: 2px; width: 20%; padding: 4px; font-size: 9px; margin: 0; }
+  .nav-item>span:not(.group-switcher-toggle) { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .nav-item.active:before { left: 50%; top: -7px; bottom: auto; width: 24px; height: 3px; transform: translateX(-50%); }
-  .nav-item em,.online-dot { display: none; }
+  .nav-item em,.online-dot,.group-switcher-toggle { display: none; }
 }
 
 /* 印刷時は操作用ナビゲーションを表示しない。 */
