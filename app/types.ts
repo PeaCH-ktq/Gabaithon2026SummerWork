@@ -63,3 +63,14 @@ export type ShelfFormValues = {
 
 /** 棚一覧の読み込み状態（空・ローディング・エラーの3状態）。 */
 export type LoadState = "loading" | "error" | "ready";
+
+/** `study_sessions` テーブルの行そのもの。 */
+export type StudySessionRow = Database["public"]["Tables"]["study_sessions"]["Row"];
+
+/** 勉強会の作成モーダルが親へ渡す値。`group_id` / `created_by` は親が補う。 */
+export type StudySessionFormValues = {
+  title: string;
+  location: string | null;
+  starts_at: string;
+  ends_at: string;
+};

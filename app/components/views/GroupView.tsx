@@ -4,7 +4,11 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/lib/supabase/types";
 import { listGroupMembers, leaveGroup } from "@/lib/data/groups";
 import { setShelfVisible } from "@/lib/data/shares";
-import type { GroupMember, GroupRow, LoadState, Notify, Shelf } from "../../types";
+import { deleteStudySession } from "@/lib/data/studySessions";
+import { needsReauth, summarizeSync, syncSessionToCalendar, unsyncSessionFromCalendar } from "@/lib/api/calendar";
+import { signInWithGoogle } from "@/lib/supabase/auth";
+import { formatSessionDate, formatSessionRange } from "@/lib/format/datetime";
+import type { GroupMember, GroupRow, LoadState, Notify, Shelf, StudySessionRow } from "../../types";
 import { Button, Icon } from "../ui";
 
 type Props = {
@@ -13,20 +17,26 @@ type Props = {
   groupsState: LoadState;
   userId: string | null;
   shelves: Shelf[];
+  sessions: StudySessionRow[];
+  sessionsState: LoadState;
   openCourse: (shelfId: string) => void;
   notify: Notify;
   openSchedule: () => void;
   openGroupModal: () => void;
   onLeft: () => void;
   onSharesChanged: () => void;
+  onSessionsChanged: () => void;
 };
 
-export function GroupView({ supabase, group, groupsState, userId, shelves, openCourse, notify, openSchedule, openGroupModal, onLeft, onSharesChanged }: Props) {
+export function GroupView({ supabase, group, groupsState, userId, shelves, sessions, sessionsState, openCourse, notify, openSchedule, openGroupModal, onLeft, onSharesChanged, onSessionsChanged }: Props) {
   const [inviteOpen, setInviteOpen] = useState(false);
   const [members, setMembers] = useState<GroupMember[]>([]);
   const [membersState, setMembersState] = useState<LoadState>("loading");
   const [leaving, setLeaving] = useState(false);
   const [togglingShelfId, setTogglingShelfId] = useState<string | null>(null);
+  const [syncingId, setSyncingId] = useState<string | null>(null);
+  const [cancelingId, setCancelingId] = useState<string | null>(null);
+  const [reauthNeeded, setReauthNeeded] = useState(false);
 
   useEffect(() => {
     if (!group) return;
@@ -89,6 +99,34 @@ export function GroupView({ supabase, group, groupsState, userId, shelves, openC
     }
   }
 
+  async function handleSync(session: StudySessionRow) {
+    setSyncingId(session.id);
+    try {
+      const result = await syncSessionToCalendar(session.id);
+      if (needsReauth(result, userId)) setReauthNeeded(true);
+      notify(summarizeSync(result));
+    } catch (err) {
+      notify(err instanceof Error ? err.message : "カレンダー連携に失敗しました");
+    } finally {
+      setSyncingId(null);
+    }
+  }
+
+  async function handleCancel(session: StudySessionRow) {
+    if (!window.confirm(`「${session.title}」を取り消します。参加者のカレンダーからも削除されます。`)) return;
+    setCancelingId(session.id);
+    try {
+      await unsyncSessionFromCalendar(session.id);
+      await deleteStudySession(supabase, session.id);
+      notify("勉強会を取り消しました");
+      onSessionsChanged();
+    } catch (err) {
+      notify(err instanceof Error ? err.message : "勉強会の取り消しに失敗しました");
+    } finally {
+      setCancelingId(null);
+    }
+  }
+
   return (
     <>
       <header className="group-hero">
@@ -136,34 +174,43 @@ export function GroupView({ supabase, group, groupsState, userId, shelves, openC
               予定を決める
             </Button>
           </div>
-          {[
-            {
-              date: "8月30日（日）",
-              time: "14:00 – 18:00",
-              title: "データベース論 中間対策",
-              place: "中央図書館 グループ学習室B",
-              people: "5人",
-            },
-            {
-              date: "9月2日（水）",
-              time: "10:00 – 12:00",
-              title: "OS 演習もくもく会",
-              place: "情報棟3F ラウンジ",
-              people: "3人",
-            },
-          ].map((m, i) => (
-            <article className="meeting" key={m.title}>
+          {sessionsState === "loading" && <p className="muted">読み込んでいます…</p>}
+          {sessionsState === "error" && <p className="muted">勉強会の取得に失敗しました</p>}
+          {sessionsState === "ready" && sessions.length === 0 && (
+            <div className="empty-state"><b>予定はまだありません</b><p>「予定を決める」から勉強会をつくりましょう。</p></div>
+          )}
+          {reauthNeeded && (
+            <p className="muted">
+              <button className="text-link" onClick={() => void signInWithGoogle()}>Google を再連携する</button>
+            </p>
+          )}
+          {sessions.map((s, i) => (
+            <article className="meeting" key={s.id}>
               <div className="meeting-date">
-                <strong>{m.date}</strong>
-                <span>{m.time}</span>
+                <strong>{formatSessionDate(s.starts_at)}</strong>
+                <span>{formatSessionRange(s.starts_at, s.ends_at)}</span>
               </div>
               <div className="meeting-info">
-                <h3>{m.title}</h3>
-                <p>
-                  {m.place} ・ 参加 {m.people}
-                </p>
+                <h3>{s.title}</h3>
+                <p>{s.location ?? "場所未定"}</p>
               </div>
-              <Button primary={i === 0} icon="calendar" onClick={() => notify("カレンダー連携はバックエンド接続後に利用できます")}>カレンダーへ</Button>
+              <Button
+                primary={i === 0}
+                icon="calendar"
+                disabled={syncingId === s.id}
+                onClick={() => void handleSync(s)}
+              >
+                {syncingId === s.id ? "連携中…" : "カレンダーへ"}
+              </Button>
+              {s.created_by === userId && (
+                <button
+                  className="text-link"
+                  disabled={cancelingId === s.id}
+                  onClick={() => void handleCancel(s)}
+                >
+                  {cancelingId === s.id ? "取り消し中…" : "キャンセル"}
+                </button>
+              )}
             </article>
           ))}
         </section>

@@ -378,8 +378,8 @@ Route Handler を置くのは以下のいずれかに該当する場合**のみ*
 | `GET /auth/callback` | 実装済み・コミット済み | service-role | Google OAuth コールバック（`google_credentials` upsert） |
 | `GET /api/materials` | 実装済み | セッション | 自分の資料一覧（`CreateQuizModal` が使用） |
 | `POST /api/questions/generate` | 実装済み。`materialId` 受け取り＋`question_sets` 保存＋`getUser()` 認証 | `GEMINI_API_KEY` | 資料から問題生成 |
-| `POST /api/calendar/events` | 実装済み・**UI 未接続** | refresh token + Calendar API | 勉強予定をグループ全員の Google Calendar へ |
-| `DELETE /api/calendar/events/[id]` | 実装済み・**UI 未接続**（`[id]` = `study_session_id`） | refresh token + Calendar API | 上記の全員ぶん取り消し |
+| `POST /api/calendar/events` | 実装済み・UI 接続済み | refresh token + Calendar API | 勉強予定をグループ全員の Google Calendar へ |
+| `DELETE /api/calendar/events/[id]` | 実装済み・UI 接続済み（`[id]` = `study_session_id`） | refresh token + Calendar API | 上記の全員ぶん取り消し |
 
 `POST /api/questions/generate` の詳細ペイロード/エラーは既存実装
 （`multipart/form-data`、`materialId` 必須、`extraInstruction` ≤1000 字、
@@ -560,20 +560,33 @@ Route Handler を置くのは以下のいずれかに該当する場合**のみ*
     （`shelf_shares` に UPDATE ポリシーが無かったため同マイグレーションで追加）。
 - **完了条件（達成）**: 共有した棚の問題集が他メンバーの画面に出て、共有解除・非表示で消える。
 
-### 8. 勉強会とカレンダー連携
+### 8. 勉強会とカレンダー連携 ✅ 完了
 
 - **対象**: [`app/components/modals/ScheduleModal.tsx`](../app/components/modals/ScheduleModal.tsx)、
-  [`app/components/views/GroupView.tsx`](../app/components/views/GroupView.tsx)、`lib/data/studySessions.ts`
-- **やること**:
-  - `ScheduleModal` は現在 **非制御入力で値を一切読んでいない**（`defaultValue` のハードコード）。
-    制御化し、`日付 + 開始/終了時刻` を `starts_at` / `ends_at`（timestamptz）へ組み立てて
-    `study_sessions.insert({ group_id, created_by, title, location, starts_at, ends_at })`
-  - `GroupView` の予定リテラル配列（「つぎの勉強会」）を実クエリへ
-  - 「カレンダーへ」ボタン（現在「バックエンド接続後に利用できます」と notify するだけ）を
-    **実装済みの** `POST /api/calendar/events` に接続。返り値 `{created, skipped, failed}` を
-    toast に反映（`reauth_required` は再ログイン導線へ）
-  - キャンセルは `DELETE /api/calendar/events/{study_session_id}` → その後 `study_sessions` 行削除
-- **完了条件**: 予定作成 → 「カレンダーへ」→ 参加者の Google カレンダーに実際に入る。
+  [`app/components/views/GroupView.tsx`](../app/components/views/GroupView.tsx)、
+  [`app/page.tsx`](../app/page.tsx)、[`lib/data/studySessions.ts`](../lib/data/studySessions.ts)、
+  [`lib/api/calendar.ts`](../lib/api/calendar.ts)（新規）、[`lib/format/datetime.ts`](../lib/format/datetime.ts)（新規）
+- **実装内容**:
+  - `ScheduleModal` を `ShelfModal` と同じ形で制御化（`title` / `date` / `startTime` / `endTime` / `location` を
+    `useState`）。`lib/format/datetime.ts` の `toISOFromLocal` で `starts_at` / `ends_at` を組み立て、
+    終了 ≤ 開始はモーダル内エラー表示で弾く。`groupName` / `saving` / `onSave` を受け取る形に刷新し、
+    `notify` prop は廃止。
+  - `page.tsx` に `sessions` / `sessionsState`（`listUpcomingSessions(supabase, selectedGroupId)`）と
+    `saveSession`（`createStudySession` → `loadSessions` → モーダルを閉じる）を追加。`shelves` / `groups` と
+    同じ「`useCallback` ローダー＋`LoadState`」パターン。`modal === "schedule"` の描画に `selectedGroup` の
+    ガードを追加（グループ未所属では開けない）。
+  - `GroupView` の「つぎの勉強会」は `sessions` prop の実データ描画に刷新
+    （`formatSessionDate` / `formatSessionRange`、`lib/format/datetime.ts`）。「参加 N人」表示は
+    出欠テーブルが無いため削除。
+  - `lib/api/calendar.ts`（新規）: `POST /api/calendar/events` / `DELETE /api/calendar/events/{id}` を叩く
+    薄いクライアント。`summarizeSync` が `{created, skipped, failed}` をトースト用の1文にまとめ、
+    `needsReauth` が自分ぶんの `reauth_required` を判定する。
+  - 「カレンダーへ」ボタンは `syncSessionToCalendar` を呼び、結果を `notify` へ。自分が再連携必要な場合は
+    `signInWithGoogle()`（`lib/supabase/auth.ts` 既存）への導線を表示。
+  - 「キャンセル」ボタンは `session.created_by === userId` のときだけ表示（RLS の delete ポリシーと一致）。
+    `window.confirm` の後、`unsyncSessionFromCalendar` → `deleteStudySession` の順に実行。
+- **完了条件（達成）**: 予定作成 → リロード後も残る → 「カレンダーへ」→ 参加者の Google カレンダーに
+  実際に入る → 作成者の「キャンセル」で Google 側・`study_sessions` 行とも消える。
 
 ### 9. アカウント画面
 
