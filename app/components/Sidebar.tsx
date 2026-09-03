@@ -25,7 +25,11 @@ export function Sidebar({ view, navigate, openShelves, groups, selectedGroupId, 
   useEffect(() => {
     if (!switcherOpen) return;
     function onDocMouseDown(e: MouseEvent) {
-      if (switcherRef.current && !switcherRef.current.contains(e.target as Node)) setSwitcherOpen(false);
+      if (
+        switcherRef.current &&
+        !switcherRef.current.contains(e.target as Node)
+      )
+        setSwitcherOpen(false);
     }
     document.addEventListener("mousedown", onDocMouseDown);
     return () => document.removeEventListener("mousedown", onDocMouseDown);
@@ -38,12 +42,11 @@ export function Sidebar({ view, navigate, openShelves, groups, selectedGroupId, 
         onClick={() => navigate("home")}
         aria-label="Tan-E ホーム"
       >
-        <span className="brand-mark">
-          <span />
+        <span className="brand-mark-img">
+          <img src="/Tan-E_icon.svg" alt="Tan-E" width={75} height={75} />
         </span>
         <span className="brand-copy">
           <b>Tan-E</b>
-          <small>STUDY COMPANION</small>
         </span>
       </button>
       <nav aria-label="メインナビゲーション">
@@ -56,7 +59,9 @@ export function Sidebar({ view, navigate, openShelves, groups, selectedGroupId, 
           <button
             key={item.id}
             className={`nav-item ${view === item.id || (item.id === "course" && view === "quiz") ? "active" : ""}`}
-            onClick={() => item.id === "course" ? openShelves() : navigate(item.id as View)}
+            onClick={() =>
+              item.id === "course" ? openShelves() : navigate(item.id as View)
+            }
           >
             <Icon name={item.icon as IconName} />
             <span>{item.label}</span>
@@ -82,12 +87,17 @@ export function Sidebar({ view, navigate, openShelves, groups, selectedGroupId, 
                 role="button"
                 aria-label="グループを切り替える"
                 className="group-switcher-toggle"
-                onClick={(e) => { e.stopPropagation(); setSwitcherOpen((v) => !v); }}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setSwitcherOpen((v) => !v);
+                }}
               >
                 <Icon name="arrow" size={12} />
               </span>
             )}
-            {groups.length <= 1 && selectedGroup && <span className="online-dot" />}
+            {groups.length <= 1 && selectedGroup && (
+              <span className="online-dot" />
+            )}
           </button>
           {switcherOpen && (
             <ul className="group-switcher">
@@ -95,14 +105,24 @@ export function Sidebar({ view, navigate, openShelves, groups, selectedGroupId, 
                 <li key={group.id}>
                   <button
                     className={group.id === selectedGroupId ? "active" : ""}
-                    onClick={() => { onSelectGroup(group.id); setSwitcherOpen(false); navigate("group"); }}
+                    onClick={() => {
+                      onSelectGroup(group.id);
+                      setSwitcherOpen(false);
+                      navigate("group");
+                    }}
                   >
                     {group.name}
                   </button>
                 </li>
               ))}
               <li>
-                <button className="group-switcher-add" onClick={() => { setSwitcherOpen(false); onCreateGroup(); }}>
+                <button
+                  className="group-switcher-add"
+                  onClick={() => {
+                    setSwitcherOpen(false);
+                    onCreateGroup();
+                  }}
+                >
                   <Icon name="plus" size={13} /> グループを作成 / 参加
                 </button>
               </li>
@@ -110,7 +130,10 @@ export function Sidebar({ view, navigate, openShelves, groups, selectedGroupId, 
           )}
         </div>
         <span className="nav-label second">ACCOUNT</span>
-        <button className={`nav-item ${view === "account" ? "active" : ""}`} onClick={() => navigate("account")}>
+        <button
+          className={`nav-item ${view === "account" ? "active" : ""}`}
+          onClick={() => navigate("account")}
+        >
           <Icon name="users" />
           <span>アカウント</span>
         </button>

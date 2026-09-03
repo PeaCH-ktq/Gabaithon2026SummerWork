@@ -42,16 +42,23 @@ function LoginCard() {
       await signInWithGoogle(next);
       // 成功時は Google へリダイレクトするのでこの後は実行されない。
     } catch {
-      setError("ログインを開始できませんでした。時間をおいて再度お試しください。");
+      setError(
+        "ログインを開始できませんでした。時間をおいて再度お試しください。",
+      );
       setLoading(false);
     }
   }
 
   return (
     <div className="auth-card">
-      <div className="auth-mark" aria-hidden="true">
-        <span />
-      </div>
+      {/* ロゴアイコン（Tan-E_icon.svg をそのまま表示） */}
+      <img
+        src="/Tan-E_icon.svg"
+        alt="Tan-E"
+        className="auth-mark"
+        width={120}
+        height={108}
+      />
       <h1 className="auth-title">Tan-E にログイン</h1>
       <p className="auth-lead">Google アカウントでログインしてください。</p>
 

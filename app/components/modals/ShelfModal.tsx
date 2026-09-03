@@ -65,8 +65,12 @@ export function ShelfModal({
         <label className="text-field">担当教員<input value={professor} onChange={(e) => setProfessor(e.target.value)} /></label>
         <label className="text-field">教室<input value={room} onChange={(e) => setRoom(e.target.value)} /></label>
         <div className="modal-actions">
-          <Button subtle onClick={onClose}>キャンセル</Button>
-          <Button primary onClick={submit}>{saving ? "保存中…" : initial ? "変更を保存" : "棚を追加"}</Button>
+          {initial ? (
+            <Button danger disabled={saving}>講義を削除</Button>
+          ) : (
+            <Button subtle onClick={onClose}>キャンセル</Button>
+          )}
+          <Button primary disabled={saving} onClick={submit}>{saving ? "保存中…" : initial ? "変更を保存" : "棚を追加"}</Button>
         </div>
       </section>
     </div>

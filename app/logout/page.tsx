@@ -17,9 +17,14 @@ export default function LogoutPage() {
   return (
     <main className="auth-screen">
       <div className="auth-card">
-        <div className="auth-mark" aria-hidden="true">
-          <span />
-        </div>
+        {/* ロゴアイコン（Tan-E_icon.svg をそのまま表示） */}
+        <img
+          src="/Tan-E_icon.svg"
+          alt="Tan-E"
+          className="auth-mark"
+          width={120}
+          height={108}
+        />
         {state === "pending" && (
           <>
             <h1 className="auth-title">ログアウトしています…</h1>

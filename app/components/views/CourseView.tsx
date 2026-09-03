@@ -1,4 +1,11 @@
-import type { Assignment, LoadState, MaterialRow, Navigate, QuestionSetRow, Shelf } from "../../types";
+import type {
+  Assignment,
+  LoadState,
+  MaterialRow,
+  Navigate,
+  QuestionSetRow,
+  Shelf,
+} from "../../types";
 import { formatSchedule } from "@/lib/format/schedule";
 import { Button, Icon } from "../ui";
 
@@ -21,7 +28,10 @@ type Props = {
   isOwner: boolean;
 };
 
-const DATE_FMT = new Intl.DateTimeFormat("ja-JP", { month: "long", day: "numeric" });
+const DATE_FMT = new Intl.DateTimeFormat("ja-JP", {
+  month: "long",
+  day: "numeric",
+});
 
 export function CourseView({
   activeTab,
@@ -43,14 +53,15 @@ export function CourseView({
 }: Props) {
   return (
     <>
-      <button className="back-link" onClick={openShelves}>
-        ← 講義の棚
-      </button>
       <header className="course-head">
         <div className="course-code">{shelf.course_code ?? "—"}</div>
         <div>
           <h1>{shelf.course_name}</h1>
-          <p>{shelf.professor ?? "担当教員未設定"} ・ {formatSchedule(shelf.day_of_week, shelf.period)} ・ {shelf.room ?? "教室未設定"}</p>
+          <p>
+            {shelf.professor ?? "担当教員未設定"} ・{" "}
+            {formatSchedule(shelf.day_of_week, shelf.period)} ・{" "}
+            {shelf.room ?? "教室未設定"}
+          </p>
         </div>
         {isOwner && <Button onClick={editCourse}>棚を編集</Button>}
         {isOwner && (
@@ -63,12 +74,44 @@ export function CourseView({
         <Icon name="check" />
         <div>
           <b>講義資料はあなただけに表示されます</b>
-          <p>{isOwner ? "グループに共有されるのは、共有を許可した棚の問題集だけです。" : "この棚はグループに共有されています。講義資料は所有者だけが閲覧できます。"}</p>
+          <p>
+            {isOwner
+              ? "グループに共有されるのは、共有を許可した棚の問題集だけです。"
+              : "この棚はグループに共有されています。講義資料は所有者だけが閲覧できます。"}
+          </p>
         </div>
       </div>
       <section className="course-assignments">
-        <div className="card-head"><div><p className="eyebrow">ASSIGNMENTS</p><h2>この講義の課題</h2></div><Button icon="arrow" onClick={() => navigate("tasks")}>課題一覧へ</Button></div>
-        {assignments.length === 0 ? <div className="empty-state"><b>この講義の未完了課題はありません</b></div> : <div className="course-assignment-list">{assignments.map((assignment) => <button key={assignment.title} onClick={() => navigate("tasks")}><span className={`date-box ${assignment.color}`}><b>{assignment.left}</b><small>{assignment.date}</small></span><span><b>{assignment.title}</b><small>{assignment.course}</small></span><Icon name="arrow" size={15} /></button>)}</div>}
+        <div className="card-head">
+          <div>
+            <p className="eyebrow">ASSIGNMENTS</p>
+            <h2>この講義の課題</h2>
+          </div>
+          <Button icon="arrow" onClick={() => navigate("tasks")}>
+            課題一覧へ
+          </Button>
+        </div>
+        {assignments.length === 0 ? (
+          <div className="empty-state">
+            <b>この講義の未完了課題はありません</b>
+          </div>
+        ) : (
+          <div className="course-assignment-list">
+            {assignments.map((assignment) => (
+              <button key={assignment.title} onClick={() => navigate("tasks")}>
+                <span className={`date-box ${assignment.color}`}>
+                  <b>{assignment.left}</b>
+                  <small>{assignment.date}</small>
+                </span>
+                <span>
+                  <b>{assignment.title}</b>
+                  <small>{assignment.course}</small>
+                </span>
+                <Icon name="arrow" size={15} />
+              </button>
+            ))}
+          </div>
+        )}
       </section>
       <div className="tabs">
         <button
@@ -92,29 +135,42 @@ export function CourseView({
               <p>PDFやスライドを追加すると、出題範囲に選べます。</p>
             </div>
             {isOwner && (
-              <Button
-                icon="upload"
-                onClick={openMaterial}
-              >
+              <Button icon="upload" onClick={openMaterial}>
                 資料を追加
               </Button>
             )}
           </div>
           <div className="file-list">
-            {materialsState === "loading" && <div className="empty-state"><b>読み込み中…</b></div>}
-            {materialsState === "error" && <div className="empty-state"><b>資料の読み込みに失敗しました</b></div>}
+            {materialsState === "loading" && (
+              <div className="empty-state">
+                <b>読み込み中…</b>
+              </div>
+            )}
+            {materialsState === "error" && (
+              <div className="empty-state">
+                <b>資料の読み込みに失敗しました</b>
+              </div>
+            )}
             {materialsState === "ready" && materials.length === 0 && (
               <div className="empty-state">
                 <b>資料はまだありません</b>
-                <p>{isOwner ? "「資料を追加」から最初のファイルを選んでください。" : "この棚の資料は所有者だけが閲覧できます。"}</p>
+                <p>
+                  {isOwner
+                    ? "「資料を追加」から最初のファイルを選んでください。"
+                    : "この棚の資料は所有者だけが閲覧できます。"}
+                </p>
               </div>
             )}
             {materials.map((material) => (
               <div className="file-row" key={material.id}>
-                <span className="file-icon">{extLabel(material.file_name, material.mime_type)}</span>
+                <span className="file-icon">
+                  {extLabel(material.file_name, material.mime_type)}
+                </span>
                 <div>
                   <b>{material.file_name}</b>
-                  <small>{DATE_FMT.format(new Date(material.created_at))}追加</small>
+                  <small>
+                    {DATE_FMT.format(new Date(material.created_at))}追加
+                  </small>
                 </div>
                 <span className="private-pill">自分のみ</span>
                 <button aria-label="その他">
@@ -136,26 +192,49 @@ export function CourseView({
                 <Button primary icon="sparkle" onClick={startCreate}>
                   新しくつくる
                 </Button>
-                <Button icon="share" onClick={openShare}>{shelf.shares.length > 0 ? "共有設定" : "グループに共有"}</Button>
+                <Button icon="share" onClick={openShare}>
+                  {shelf.shares.length > 0 ? "共有設定" : "グループに共有"}
+                </Button>
               </>
             )}
           </div>
           <div className="file-list">
-            {questionSetsState === "loading" && <div className="empty-state"><b>読み込み中…</b></div>}
-            {questionSetsState === "error" && <div className="empty-state"><b>問題集の読み込みに失敗しました</b></div>}
-            {questionSetsState === "ready" && questionSets.length === 0 && <div className="empty-state"><b>問題集はまだありません</b><p>「新しくつくる」から最初の問題集を作成してください。</p></div>}
+            {questionSetsState === "loading" && (
+              <div className="empty-state">
+                <b>読み込み中…</b>
+              </div>
+            )}
+            {questionSetsState === "error" && (
+              <div className="empty-state">
+                <b>問題集の読み込みに失敗しました</b>
+              </div>
+            )}
+            {questionSetsState === "ready" && questionSets.length === 0 && (
+              <div className="empty-state">
+                <b>問題集はまだありません</b>
+                <p>「新しくつくる」から最初の問題集を作成してください。</p>
+              </div>
+            )}
             {questionSets.map((qs) => (
               <button
                 className="file-row quiz-row"
                 key={qs.id}
-                onClick={() => { openQuiz(qs.id); navigate("quiz"); }}
+                onClick={() => {
+                  openQuiz(qs.id);
+                  navigate("quiz");
+                }}
               >
                 <span className="quiz-icon">Q</span>
                 <div>
                   <b>{qs.title}</b>
-                  <small>{qs.content.questions.length}問 ・ {DATE_FMT.format(new Date(qs.created_at))}作成</small>
+                  <small>
+                    {qs.content.questions.length}問 ・{" "}
+                    {DATE_FMT.format(new Date(qs.created_at))}作成
+                  </small>
                 </div>
-                <span className="private-pill">{shelf.shares.length > 0 ? "共有中" : "自分のみ"}</span>
+                <span className="private-pill">
+                  {shelf.shares.length > 0 ? "共有中" : "自分のみ"}
+                </span>
                 <Icon name="arrow" />
               </button>
             ))}

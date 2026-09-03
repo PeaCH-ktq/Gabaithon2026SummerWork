@@ -44,6 +44,8 @@
 .button:hover { transform: translateY(-1px); box-shadow: 0 8px 20px #3230421a; }
 .button.primary { background: var(--indigo); color: white; border-color: var(--indigo); }
 .button.primary:hover { background: var(--dark); }
+.button.danger { background: #fff5f5; color: #b42318; border-color: #f1b8b4; }
+.button.danger:hover { background: #fee4e2; }
 .button.subtle {
   border-color: transparent;
   background: transparent;

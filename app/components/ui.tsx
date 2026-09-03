@@ -127,6 +127,7 @@ export function Button({
   children,
   primary,
   subtle,
+  danger,
   onClick,
   icon,
   disabled,
@@ -134,13 +135,14 @@ export function Button({
   children: ReactNode;
   primary?: boolean;
   subtle?: boolean;
+  danger?: boolean;
   onClick?: () => void;
   icon?: IconName;
   disabled?: boolean;
 }) {
   return (
     <button
-      className={`button ${primary ? "primary" : ""} ${subtle ? "subtle" : ""}`}
+      className={`button ${primary ? "primary" : ""} ${subtle ? "subtle" : ""} ${danger ? "danger" : ""}`}
       onClick={onClick}
       disabled={disabled}
     >
