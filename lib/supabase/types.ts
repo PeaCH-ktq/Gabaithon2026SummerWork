@@ -104,6 +104,7 @@ export interface Database {
           shelf_id: string;
           owner_id: string;
           source_material_id: string | null;
+          source_material_ids: string[] | null;
           title: string;
           content: QuestionSet;
           created_at: string;
@@ -112,6 +113,7 @@ export interface Database {
           shelf_id: string;
           owner_id: string;
           source_material_id?: string | null;
+          source_material_ids?: string[] | null;
           title: string;
           content: QuestionSet;
         };

@@ -7,6 +7,7 @@ import { getQuestionSet } from "@/lib/data/questionSets";
 import type { Navigate, Shelf } from "../../types";
 import { Button } from "../ui";
 import { QuestionPaper } from "@/components/QuestionPaper";
+import { MathText } from "@/components/MathText";
 import type { QuestionSet } from "@/lib/gemini/schema";
 
 type Props = {
@@ -68,7 +69,46 @@ export function QuizView({ supabase, navigate, questionSetId, shelf, isOwner, op
           <button className="text-link" onClick={() => navigate("course")}>講義の棚へ戻る</button>
         </p>
       )}
-      {state === "ready" && questionSet && <QuestionPaper questionSet={questionSet} />}
+      {state === "ready" && questionSet && (
+        <>
+          <QuestionPaper questionSet={questionSet} />
+          <AnswerKey questionSet={questionSet} />
+        </>
+      )}
     </>
+  );
+}
+
+/**
+ * 解答・解説。問題用紙とは分けて画面下に置き、印刷（＝問題用紙）には含めない。
+ * `QuestionPaper` が意図的に解答を載せないぶんをここで補う。
+ */
+function AnswerKey({ questionSet }: { questionSet: QuestionSet }) {
+  const hasAny = questionSet.questions.some((q) => q.answer || q.explanation);
+  if (!hasAny) return null;
+
+  return (
+    <section className="answer-key">
+      <h2>解答・解説</h2>
+      <ol>
+        {questionSet.questions.map((q, i) => (
+          <li key={i}>
+            <b>問 {i + 1}.</b>
+            {q.answer && (
+              <p>
+                <span className="answer-key-tag">解答</span>
+                <MathText text={q.answer} />
+              </p>
+            )}
+            {q.explanation && (
+              <p className="answer-key-explanation">
+                <span className="answer-key-tag">解説</span>
+                <MathText text={q.explanation} />
+              </p>
+            )}
+          </li>
+        ))}
+      </ol>
+    </section>
   );
 }

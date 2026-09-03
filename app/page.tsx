@@ -20,7 +20,7 @@ import { TasksView } from "./components/views/TasksView";
 import type { AccountProfile, AssignmentReportRow, AssignmentRow, GroupRow, LoadState, MaterialRow, QuestionSetRow, Shelf, ShelfFormValues, StudySessionFormValues, StudySessionRow, View } from "./types";
 import { createClient } from "@/lib/supabase/client";
 import { createShelf, listShelves, updateShelf } from "@/lib/data/shelves";
-import { listMaterialsByShelf, uploadMaterial } from "@/lib/data/materials";
+import { deleteMaterial, listMaterialsByShelf, uploadMaterial } from "@/lib/data/materials";
 import { listQuestionSetsByShelf } from "@/lib/data/questionSets";
 import { createGroup, joinGroupByCode, listMyGroups } from "@/lib/data/groups";
 import { shareShelf, unshareShelf } from "@/lib/data/shares";
@@ -517,6 +517,17 @@ export default function Home() {
     }
   }
 
+  async function removeMaterial(material: MaterialRow) {
+    try {
+      await deleteMaterial(supabase, material.id);
+      await loadMaterials(material.shelf_id);
+      await loadShelves();
+      notify(`「${material.file_name}」を削除しました`);
+    } catch (err) {
+      notify(err instanceof Error ? err.message : "資料の削除に失敗しました");
+    }
+  }
+
   async function restoreAssignment(assignmentId: string) {
     try {
       await deleteAssignmentReport(supabase, assignmentId);
@@ -576,6 +587,7 @@ export default function Home() {
             navigate={navigate}
             startCreate={startCreate}
             userId={userId}
+            onDeleteMaterial={removeMaterial}
           />
         )}
         {/* 講義詳細：資料と作成済み問題集をタブで切り替える。 */}
@@ -606,6 +618,7 @@ export default function Home() {
             navigate={navigate}
             startCreate={startCreate}
             isOwner={isOwner}
+            onDeleteMaterial={removeMaterial}
           />
         )}
         {view === "course" && !selectedShelf && (
@@ -703,18 +716,20 @@ export default function Home() {
         <MaterialModal
           kind={modal === "misc" ? "misc" : "lecture"}
           onClose={() => setModal("none")}
-          onUpload={async (file) => {
+          onUpload={async (file, onProgress) => {
             const material = await uploadMaterial(
               supabase,
               selectedShelf.id,
               file,
-              undefined,
+              onProgress,
               modal === "misc" ? "misc" : "lecture",
             );
+            return material.file_name;
+          }}
+          onFinished={async (names) => {
             await loadMaterials(selectedShelf.id);
             await loadShelves();
-            setModal("none");
-            notify(`「${material.file_name}」を追加しました`);
+            notify(names.length === 1 ? `「${names[0]}」を追加しました` : `${names.length}件の資料を追加しました`);
           }}
         />
       )}

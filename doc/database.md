@@ -80,7 +80,8 @@ SECURITY DEFINER 関数）で非所有者にも許可する。
 | --- | --- | --- |
 | shelf_id | uuid FK→shelves | 所属する棚 |
 | owner_id | uuid FK→profiles | 所有者 |
-| source_material_id | uuid FK→materials, nullable | 生成元の資料（削除されても NULL で残る） |
+| source_material_id | uuid FK→materials, nullable | 生成元の資料の先頭1件（削除されても NULL で残る）。`source_material_ids` との互換用 |
+| source_material_ids | uuid[], nullable | 生成元の資料ID配列（選択順）。FK なし。複数資料を参照して生成した場合の全件 |
 | title | text | `QuestionSet.title` |
 | content | jsonb | `QuestionSet`（[`lib/gemini/schema.ts`](../lib/gemini/schema.ts)）をそのまま保存 |
 
@@ -145,13 +146,23 @@ owner も自由に脱退できる。`pg_trigger_depth()` ガードで cascade �
 
 | カラム | 型 | 説明 |
 | --- | --- | --- |
-| shelf_id | uuid FK→shelves | 講義（棚）への参照 |
-| group_id | uuid FK→groups, nullable | 所属グループ |
+| shelf_id | uuid FK→shelves ON DELETE CASCADE | 講義（棚）への参照 |
+| group_id | uuid FK→groups ON DELETE CASCADE, nullable | 共有先グループ（`pickAssignmentGroupId` が採番） |
 | created_by | uuid FK→profiles | 作成者 |
 | title | text | レポート名 |
 | due_at | timestamptz | 期限 |
 
 ホーム画面の「7 日以内の締切」は `due_at` を絞り込むだけで取得できる。
+
+**共有状態への追従**（[`20260904120000_unshare_cascades_assignments.sql`](../supabase/migrations/20260904120000_unshare_cascades_assignments.sql)）:
+
+- 表示可否は `assignments.group_id`（作成時に焼き込まれ不変）ではなく、
+  `is_shelf_shared_to(shelf_id, group_id)`（対象棚がそのグループへ `visible = true` で
+  共有されているか）を live で見る。棚を**非表示**にすると課題も学習記録も隠れ、戻せば復活する。
+- 棚の**共有解除**（`shelf_shares` 行の削除）は `on_shelf_unshared` トリガーで、その
+  (棚, グループ) 向けの `assignments` を物理削除する（`assignment_reports` は FK カスケード）。
+  棚削除・グループ削除の連鎖でも同様に消える（`group_id` は `on delete set null` から
+  `cascade` へ変更済み）。
 
 ### assignment_reports — 課題結果投稿
 
@@ -238,8 +249,8 @@ $$;
 | group_members | `is_group_member(group_id)` | `join_group_by_code` 経由のみ insert、脱退は本人 |
 | shelf_shares | `is_group_member(group_id)` | insert/update/delete とも対象棚の所有者 |
 | study_sessions | `is_group_member(group_id)` | 作成はメンバー、更新・削除は作成者 |
-| assignments | `is_group_member(group_id)`、または `shelf_id` の所有者 | 作成はメンバー、更新・削除は作成者 |
-| assignment_reports | 対象課題のグループの `is_group_member`（`group_id` が非 NULL の課題のみ） | 本人の行のみ |
+| assignments | `is_group_member(group_id)` かつ `is_shelf_shared_to(shelf_id, group_id)`（棚が可視共有中）、または `shelf_id` の所有者 | 作成はメンバー、更新・削除は作成者。共有解除で `on_shelf_unshared` トリガーが物理削除 |
+| assignment_reports | 対象課題のグループの `is_group_member` かつ `is_shelf_shared_to`（`group_id` が非 NULL の課題のみ） | 本人の行のみ |
 | google_credentials | **ポリシー無し（全拒否）** | サーバー（service-role）のみ |
 | calendar_events | **ポリシー無し（全拒否）** | サーバー（service-role）のみ |
 
@@ -269,6 +280,11 @@ $$;
 - 問題生成 API はファイル本体ではなく `materialId` を受け取り、サーバー側で Storage から
   ダウンロードして Gemini に渡す（実装済み）。`materials.size_bytes` に対して `MAX_MATERIAL_BYTES` を
   再検証し、超過時は 413 を返す。
+- **削除時の Storage 掃除**: `materials` 行を消すだけでは Storage オブジェクトが孤児として
+  課金対象で残る。`lib/data/materials.deleteMaterial` と `lib/data/shelves.deleteShelf` は
+  行削除の**前**に対象の `storage_path` を集めて `supabase.storage.from("materials").remove()`
+  する。DB 側の FK カスケード（棚削除 → `materials` 行）は Storage には及ばないため、この
+  順序を守る必要がある。
 
 ## 必要な環境変数
 
@@ -420,13 +436,14 @@ Route Handler を置くのは以下のいずれかに該当する場合**のみ*
 | --- | --- | --- | --- |
 | `GET /auth/callback` | 実装済み・コミット済み | service-role | Google OAuth コールバック（`google_credentials` upsert） |
 | `GET /api/materials` | 実装済み | セッション | 自分の資料一覧（`CreateQuizModal` が使用） |
-| `POST /api/questions/generate` | 実装済み。`materialId` 受け取り＋`question_sets` 保存＋`getUser()` 認証 | `GEMINI_API_KEY` | 資料から問題生成 |
+| `POST /api/questions/generate` | 実装済み。`materialIds`（複数, 最大6件）受け取り＋`question_sets` 保存＋`getUser()` 認証 | `GEMINI_API_KEY` | 複数資料を横断参照して問題生成 |
 | `POST /api/calendar/events` | 実装済み・UI 接続済み | refresh token + Calendar API | 勉強予定をグループ全員の Google Calendar へ |
 | `DELETE /api/calendar/events/[id]` | 実装済み・UI 接続済み（`[id]` = `study_session_id`） | refresh token + Calendar API | 上記の全員ぶん取り消し |
 
 `POST /api/questions/generate` の詳細ペイロード/エラーは既存実装
-（`multipart/form-data`、`materialId` 必須、`extraInstruction` ≤1000 字、
-429 / 503+`Retry-After` / 502）を参照。保存失敗時は `{ questionSet, questionSetId: null, saveError }` を 200 で返す。カレンダー API の返り値形は:
+（`multipart/form-data`、`materialIds`（複数キー、1〜6件、合計100MB以内）必須、
+`extraInstruction` ≤1000 字、429 / 503+`Retry-After` / 502。旧クライアント互換のため
+単数キー `materialId` も1件だけ受け付ける）を参照。保存失敗時は `{ questionSet, questionSetId: null, saveError }` を 200 で返す。カレンダー API の返り値形は:
 
 ```json
 { "created": [{ "user_id": "…", "event_id": "…" }],
@@ -543,10 +560,17 @@ Route Handler を置くのは以下のいずれかに該当する場合**のみ*
   [`app/components/views/CourseView.tsx`](../app/components/views/CourseView.tsx)、
   [`app/page.tsx`](../app/page.tsx)、[`lib/data/questionSets.ts`](../lib/data/questionSets.ts)
 - **実装内容**:
-  - Route Handler は資料行から `shelf_id` を解決し、生成後 `saveQuestionSet` で
-    `question_sets.insert({ shelf_id, owner_id, source_material_id: materialId, title, content })`。
+  - Route Handler は資料行（複数可）から `shelf_id`（選択順の先頭）を解決し、生成後
+    `saveQuestionSet` で `question_sets.insert({ shelf_id, owner_id,
+    source_material_id: materialIds[0], source_material_ids: materialIds, title, content })`。
     レスポンスは `{ questionSet, questionSetId }`（保存失敗時は `questionSetId: null` ＋ `saveError` を 200）。
-  - `file` ブランチは撤去し `materialId` のみに統一。冒頭で `getUser()`、未認証は 401（落とし穴 2 解消）。
+  - `file` ブランチは撤去し `materialId`/`materialIds` のみに統一。冒頭で `getUser()`、未認証は 401（落とし穴 2 解消）。
+  - **複数資料対応（後日追加）**: `materialIds` を最大6件・合計100MBまで受け取り、
+    Storage から並列ダウンロードして `lib/gemini/generateQuestions.ts` へ配列で渡す。
+    Gemini Files API へは並列アップロードし、各ファイルの前に `【資料N: ファイル名】` の
+    見出しテキストを挟んで区別させる（[`lib/gemini/prompts.ts`](../lib/gemini/prompts.ts)）。
+    生成元は `question_sets.source_material_ids uuid[]`（FK なし）に選択順で保存し、
+    `source_material_id` は先頭1件との互換用に残す。
   - `page.tsx` は生成結果を「保存済み ID」（`selectedQuestionSetId`）で保持。`finishGeneration` 経由。
   - [`lib/data/questionSets.ts`](../lib/data/questionSets.ts): `listQuestionSetsByShelf` /
     `getQuestionSet`（`content` を `QuestionSet` にキャストして返す）。

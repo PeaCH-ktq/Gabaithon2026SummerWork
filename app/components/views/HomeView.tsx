@@ -42,6 +42,7 @@ type Props = {
   // 編集対象の棚IDを受け取り、page.tsx側のselectedShelfIdをその棚に同期させる。
   editShelf: (id: string) => void;
   openShare: (id: string) => void;
+  onDeleteMaterial: (material: MaterialRow) => Promise<void>;
   userId: string | null;
 };
 
@@ -65,6 +66,7 @@ export function HomeView({
   openQuiz,
   editShelf,
   openShare,
+  onDeleteMaterial,
   userId,
 }: Props) {
   const [openedShelfId, setOpenedShelfId] = useState<string | null>(null);
@@ -177,21 +179,21 @@ export function HomeView({
             <h2>講義の棚</h2>
           </div>
           <Button icon="plus" onClick={openShelf}>
-            棚を追加
+            講義の追加
           </Button>
         </div>
         {shelvesState === "loading" && (
-          <p className="muted">棚を読み込んでいます…</p>
+          <p className="muted">講義を読み込んでいます…</p>
         )}
         {shelvesState === "error" && (
           <p className="muted">
-            棚の読み込みに失敗しました。再読み込みしてください。
+            講義の読み込みに失敗しました。再読み込みしてください。
           </p>
         )}
         {shelvesState === "ready" && shelves.length === 0 && (
           <div className="empty-state">
-            <b>棚はまだありません</b>
-            <p>「棚を追加」から最初の講義を登録してください。</p>
+            <b>講義はまだありません</b>
+            <p>「講義の追加」から最初の講義を登録してください。</p>
           </div>
         )}
         <div className="shelf-bookcase">
@@ -258,6 +260,7 @@ export function HomeView({
               navigate={navigate}
               startCreate={startCreate}
               isOwner={openedShelf.owner_id === userId}
+              onDeleteMaterial={onDeleteMaterial}
             />
           </div>
         )}

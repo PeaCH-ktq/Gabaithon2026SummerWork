@@ -1,4 +1,9 @@
-import { ALLOWED_MATERIAL_MIME_TYPES, MAX_MATERIAL_BYTES } from "@/lib/gemini/config";
+import {
+  ALLOWED_MATERIAL_MIME_TYPES,
+  MAX_MATERIAL_BYTES,
+  MAX_MATERIALS_PER_REQUEST,
+  MAX_TOTAL_MATERIAL_BYTES,
+} from "@/lib/gemini/config";
 import {
   GeminiContextExceededError,
   GeminiRateLimitError,
@@ -21,6 +26,7 @@ export const maxDuration = 300;
 const ALLOWED_MIME: readonly string[] = ALLOWED_MATERIAL_MIME_TYPES;
 
 type StoredMaterial = {
+  id: string;
   shelf_id: string;
   storage_path: string;
   file_name: string;
@@ -32,34 +38,59 @@ function bad(message: string, status = 400) {
   return Response.json({ error: message }, { status });
 }
 
-async function materialFromDatabase(
+/**
+ * 指定された資料IDすべてを取得・検証してから Storage を並列ダウンロードする。
+ * `shelfId` は選択順の先頭（＝UI上の1件目）の棚を返す。
+ */
+async function materialsFromDatabase(
   supabase: SupabaseClient<Database>,
-  materialId: string,
+  materialIds: string[],
 ) {
   const { data, error: rowError } = await supabase
     .from("materials")
     .select("id, shelf_id, storage_path, file_name, mime_type, size_bytes")
-    .eq("id", materialId)
-    .single();
-  if (rowError || !data) return { error: bad("指定された資料が見つかりません。", 404) } as const;
-  const row = data as unknown as StoredMaterial;
-  if (!ALLOWED_MIME.includes(row.mime_type)) return { error: bad("指定された資料のファイル形式は未対応です。") } as const;
-  if (row.size_bytes > MAX_MATERIAL_BYTES) {
+    .in("id", materialIds);
+  if (rowError || !data || data.length !== materialIds.length) {
+    return { error: bad("指定された資料が見つかりません。", 404) } as const;
+  }
+
+  // .in() は順序を保証しないため、選択順（materialIds の並び）に戻す。
+  const byId = new Map(data.map((r) => [r.id, r as unknown as StoredMaterial]));
+  const rows = materialIds.map((id) => byId.get(id)!);
+
+  for (const row of rows) {
+    if (!ALLOWED_MIME.includes(row.mime_type)) {
+      return { error: bad(`「${row.file_name}」のファイル形式は未対応です。`) } as const;
+    }
+    if (row.size_bytes > MAX_MATERIAL_BYTES) {
+      return { error: bad(
+        `「${row.file_name}」が大きすぎます（上限 ${Math.floor(MAX_MATERIAL_BYTES / 1024 / 1024)}MB）。`,
+        413,
+      ) } as const;
+    }
+  }
+  const totalBytes = rows.reduce((sum, row) => sum + row.size_bytes, 0);
+  if (totalBytes > MAX_TOTAL_MATERIAL_BYTES) {
     return { error: bad(
-      `資料が大きすぎます（上限 ${Math.floor(MAX_MATERIAL_BYTES / 1024 / 1024)}MB）。`,
+      `資料の合計サイズが大きすぎます（上限 ${Math.floor(MAX_TOTAL_MATERIAL_BYTES / 1024 / 1024)}MB）。`,
       413,
     ) } as const;
   }
 
-  const { data: blob, error: downloadError } = await supabase.storage.from("materials").download(row.storage_path);
-  if (downloadError || !blob) {
-    console.error("[questions/generate] material download", downloadError);
-    return { error: bad("資料ファイルを読み込めませんでした。", 502) } as const;
+  const downloads = await Promise.all(
+    rows.map((row) => supabase.storage.from("materials").download(row.storage_path)),
+  );
+  const materials: MaterialInput[] = [];
+  for (let i = 0; i < downloads.length; i++) {
+    const { data: blob, error: downloadError } = downloads[i];
+    if (downloadError || !blob) {
+      console.error("[questions/generate] material download", downloadError);
+      return { error: bad(`「${rows[i].file_name}」を読み込めませんでした。`, 502) } as const;
+    }
+    materials.push({ blob, mimeType: rows[i].mime_type, fileName: rows[i].file_name });
   }
-  return {
-    material: { blob, mimeType: row.mime_type, fileName: row.file_name } satisfies MaterialInput,
-    shelfId: row.shelf_id,
-  } as const;
+
+  return { materials, shelfId: rows[0].shelf_id } as const;
 }
 
 export async function POST(request: Request) {
@@ -70,17 +101,26 @@ export async function POST(request: Request) {
     return bad("multipart/form-data で送信してください。");
   }
 
-  const materialId = String(form.get("materialId") ?? "").trim();
-  if (!materialId) return bad("DBの資料を選んでください。");
+  // 旧クライアント互換（単数キー "materialId"）を残しつつ、複数キー "materialIds" を主とする。
+  const materialIds = [
+    ...new Set(form.getAll("materialIds").map((v) => String(v).trim()).filter(Boolean)),
+  ];
+  const legacyMaterialId = String(form.get("materialId") ?? "").trim();
+  if (materialIds.length === 0 && legacyMaterialId) materialIds.push(legacyMaterialId);
+
+  if (materialIds.length === 0) return bad("DBの資料を選んでください。");
+  if (materialIds.length > MAX_MATERIALS_PER_REQUEST) {
+    return bad(`参照できる資料は最大${MAX_MATERIALS_PER_REQUEST}件です。`);
+  }
   const requestedShelfId = String(form.get("shelfId") ?? "").trim() || undefined;
 
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return bad("ログインが必要です。", 401);
 
-  const result = await materialFromDatabase(supabase, materialId);
+  const result = await materialsFromDatabase(supabase, materialIds);
   if ("error" in result) return result.error;
-  const { material } = result;
+  const { materials } = result;
 
   // 資料が共有された雑資料（他人の棚に紐づく）の場合、生成した問題集を
   // 資料側の棚ではなく自分の棚に保存する。指定された棚を自分が所有していれば
@@ -101,7 +141,7 @@ export async function POST(request: Request) {
 
   let questionSet;
   try {
-    questionSet = await generateQuestions(material, { extraInstruction });
+    questionSet = await generateQuestions(materials, { extraInstruction });
   } catch (e) {
     if (e instanceof GeminiContextExceededError) {
       return bad(e.message, 413);
@@ -122,7 +162,7 @@ export async function POST(request: Request) {
 
   const saved = await saveQuestionSet(supabase, user, {
     shelfId,
-    materialId,
+    materialIds,
     questionSet,
   });
   if ("error" in saved) {
@@ -134,14 +174,15 @@ export async function POST(request: Request) {
 async function saveQuestionSet(
   supabase: SupabaseClient<Database>,
   user: User,
-  input: { shelfId: string; materialId: string; questionSet: QuestionSet },
+  input: { shelfId: string; materialIds: string[]; questionSet: QuestionSet },
 ): Promise<{ id: string } | { error: string }> {
   const { data, error } = await supabase
     .from("question_sets")
     .insert({
       shelf_id: input.shelfId,
       owner_id: user.id,
-      source_material_id: input.materialId,
+      source_material_id: input.materialIds[0],
+      source_material_ids: input.materialIds,
       title: input.questionSet.title,
       content: input.questionSet,
     })

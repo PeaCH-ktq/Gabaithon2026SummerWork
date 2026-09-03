@@ -141,6 +141,9 @@
   animation: none;
   transition: width 0.2s ease-out;
 }
+.upload-progress { margin-top: 14px; display: flex; flex-direction: column; gap: 6px; }
+.upload-progress b { font-size: 11px; }
+.upload-progress small { font-size: 9px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .small-modal { width: min(480px,100%); }
 /* 勉強会作成モーダルで使うラベル付き入力欄。 */
 .text-field {

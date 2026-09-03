@@ -273,7 +273,7 @@ export function GroupView({ supabase, group, groupsState, userId, shelves, sessi
             講義資料そのものは共有されません。過去問などを共有する前に、再配布が許可されているか確認してください。
           </div>
           {sharedShelves.length === 0 && (
-            <div className="empty-state"><b>共有されている棚はまだありません</b><p>講義の棚から「グループに共有」を選んでください。</p></div>
+            <div className="empty-state"><b>共有されている講義はまだありません</b><p>講義の棚から「グループに共有」を選んでください。</p></div>
           )}
           {sharedShelves.map((shelf) => {
             const share = shelf.shares.find((s) => s.group_id === group.id)!;

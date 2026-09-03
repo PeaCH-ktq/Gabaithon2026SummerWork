@@ -6,7 +6,7 @@ import {
   GENERATION_DEFAULTS,
   GENERATION_RETRY,
 } from "./config";
-import { deleteMaterial, uploadMaterial } from "./files";
+import { deleteMaterial, uploadMaterial, type UploadedMaterial } from "./files";
 import { validateSvg } from "@/lib/svg/validateSvg";
 import { buildQuestionPrompt, type QuestionPromptOptions } from "./prompts";
 import { parseQuestionSet, questionSetResponseSchema, type QuestionSet } from "./schema";
@@ -76,7 +76,7 @@ export class GeminiUnavailableError extends Error {
 /** 資料がモデルのコンテキスト上限を超えた場合の、利用者向けエラー。 */
 export class GeminiContextExceededError extends Error {
   constructor() {
-    super("資料のページ数が多すぎて処理できません。範囲を絞った資料でお試しください。");
+    super("資料の量が多すぎて処理できません。選択する資料を減らすか、範囲を絞った資料でお試しください。");
     this.name = "GeminiContextExceededError";
   }
 }
@@ -134,29 +134,42 @@ async function generateWithRetry(
 }
 
 /**
- * 講義資料 または 過去問（1ファイル）から問題セットを生成する。
+ * 講義資料・過去問（1件以上のファイル）から問題セットを生成する。
  *
- * 1. ファイルを Files API にアップロード
- * 2. ファイル参照 + プロンプトで generateContent（構造化 JSON 出力）
- * 3. 後片付けとしてアップロードファイルを削除
+ * 1. すべてのファイルを Files API へ並列アップロード
+ * 2. ファイル参照（資料ごとの見出し付き）+ プロンプトで generateContent（構造化 JSON 出力）
+ * 3. 後片付けとしてアップロード済みファイルをすべて削除（成功分のみ、失敗しても無視）
  */
 export async function generateQuestions(
-  material: MaterialInput,
+  materials: MaterialInput[],
   options: GenerateQuestionsOptions = {},
 ): Promise<QuestionSet> {
-  const uploaded = await uploadMaterial(
-    material.blob,
-    material.mimeType,
-    material.fileName ?? "material",
-  );
+  if (materials.length === 0) throw new Error("資料が指定されていません。");
 
+  // Promise.all の結果をまとめて受け取ると、途中で reject した際に
+  // 先に成功したアップロードの後片付けができなくなる。添字ごとに埋めていく。
+  const uploaded: (UploadedMaterial | undefined)[] = new Array(materials.length);
   try {
-    const prompt = buildQuestionPrompt(options);
+    await Promise.all(
+      materials.map(async (m, i) => {
+        uploaded[i] = await uploadMaterial(m.blob, m.mimeType, m.fileName ?? `material-${i + 1}`);
+      }),
+    );
 
-    const contents = createUserContent([
-      createPartFromUri(uploaded.uri, uploaded.mimeType),
-      createPartFromText(prompt),
-    ]);
+    const prompt = buildQuestionPrompt({
+      ...options,
+      materialNames: materials.map((m, i) => m.fileName ?? `資料${i + 1}`),
+    });
+
+    // 各ファイルの直前に見出しを挟み、モデルがどの資料かを区別できるようにする。
+    const fileParts = materials.flatMap((m, i) => {
+      const file = uploaded[i]!;
+      return [
+        createPartFromText(`【資料${i + 1}: ${m.fileName ?? "material"}】`),
+        createPartFromUri(file.uri, file.mimeType),
+      ];
+    });
+    const contents = createUserContent([...fileParts, createPartFromText(prompt)]);
 
     const ai = getGeminiClient();
     const models = [...new Set([GEMINI_MODEL, GEMINI_FALLBACK_MODEL])];
@@ -175,6 +188,10 @@ export async function generateQuestions(
 
     return sanitizeFigures(parseQuestionSet(response.text));
   } finally {
-    await deleteMaterial(uploaded.name);
+    await Promise.all(
+      uploaded
+        .filter((u): u is UploadedMaterial => !!u)
+        .map((u) => deleteMaterial(u.name)),
+    );
   }
 }

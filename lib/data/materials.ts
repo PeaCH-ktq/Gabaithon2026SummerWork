@@ -153,6 +153,23 @@ export async function createMaterialSignedUrl(
 }
 
 export async function deleteMaterial(supabase: DB, id: string): Promise<void> {
+  // 行を消す前に Storage の実ファイルを消す。逆順だと storage_path を失って
+  // 孤児オブジェクトが残る。
+  const { data: row } = await supabase
+    .from("materials")
+    .select("storage_path")
+    .eq("id", id)
+    .maybeSingle();
+  if (row?.storage_path) {
+    const { error: removeError } = await supabase.storage
+      .from("materials")
+      .remove([row.storage_path]);
+    if (removeError) {
+      console.error("[data] 資料ファイルの削除", removeError);
+      throw new Error("資料ファイルの削除に失敗しました。");
+    }
+  }
+
   const { error } = await supabase.from("materials").delete().eq("id", id);
   if (error) {
     console.error("[data] 資料の削除", error);

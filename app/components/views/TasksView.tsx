@@ -123,7 +123,7 @@ export function TasksView({
 
       {shelves.length === 0 && (
         <p className="muted">
-          先に講義棚を作成すると、課題を追加できるようになります。
+          先に講義を追加すると、課題を追加できるようになります。
         </p>
       )}
 

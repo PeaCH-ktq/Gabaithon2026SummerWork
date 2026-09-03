@@ -43,7 +43,7 @@ export function ShelfModal({
       <section className="modal small-modal" role="dialog" aria-modal="true">
         <button className="modal-close" onClick={onClose} aria-label="閉じる"><Icon name="close" /></button>
         <p className="eyebrow">COURSE SHELF</p>
-        <h2>{initial ? "棚を編集する" : "新しい棚をつくる"}</h2>
+        <h2>{initial ? "講義を編集する" : "新しい講義を登録する"}</h2>
         <div className="field-pair">
           <label className="text-field">講義コード<input value={code} onChange={(e) => setCode(e.target.value)} placeholder="CS-302" /></label>
           <div className="field-pair">
@@ -70,7 +70,7 @@ export function ShelfModal({
           ) : (
             <Button subtle onClick={onClose}>キャンセル</Button>
           )}
-          <Button primary disabled={saving} onClick={submit}>{saving ? "保存中…" : initial ? "変更を保存" : "棚を追加"}</Button>
+          <Button primary disabled={saving} onClick={submit}>{saving ? "保存中…" : initial ? "変更を保存" : "講義の追加"}</Button>
         </div>
       </section>
     </div>

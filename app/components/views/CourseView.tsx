@@ -9,6 +9,7 @@ import type { AssignmentView } from "@/lib/format/assignments";
 import { formatSchedule } from "@/lib/format/schedule";
 import { createMaterialSignedUrl } from "@/lib/data/materials";
 import { Button, Icon } from "../ui";
+import { RowMenu } from "../RowMenu";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/lib/supabase/types";
 
@@ -31,6 +32,7 @@ type Props = {
   assignments: AssignmentView[];
   openShelves: () => void;
   isOwner: boolean;
+  onDeleteMaterial: (material: MaterialRow) => Promise<void>;
 };
 
 const DATE_FMT = new Intl.DateTimeFormat("ja-JP", {
@@ -57,6 +59,7 @@ export function CourseView({
   assignments,
   openShelves,
   isOwner,
+  onDeleteMaterial,
 }: Props) {
   const lectureMaterials = materials.filter((m) => m.kind === "lecture");
   const miscMaterials = materials.filter((m) => m.kind === "misc");
@@ -68,6 +71,11 @@ export function CourseView({
     } catch (err) {
       console.error(err);
     }
+  }
+
+  function confirmDeleteMaterial(material: MaterialRow) {
+    if (!window.confirm(`「${material.file_name}」を削除します。`)) return;
+    void onDeleteMaterial(material);
   }
   return (
     <>
@@ -100,7 +108,7 @@ export function CourseView({
           <p>
             {isOwner
               ? "グループに共有されるのは、共有を許可した棚の問題集と雑資料だけです。"
-              : "この棚はグループに共有されています。講義資料は所有者だけが閲覧できます。"}
+              : "この講義はグループに共有されています。講義資料は所有者だけが閲覧できます。"}
           </p>
         </div>
       </div>
@@ -202,9 +210,17 @@ export function CourseView({
                   </small>
                 </div>
                 <span className="private-pill">自分のみ</span>
-                <button aria-label="その他">
-                  <Icon name="more" />
-                </button>
+                {isOwner && (
+                  <RowMenu
+                    items={[
+                      {
+                        label: "削除",
+                        danger: true,
+                        onSelect: () => confirmDeleteMaterial(material),
+                      },
+                    ]}
+                  />
+                )}
               </div>
             ))}
           </div>
@@ -245,24 +261,36 @@ export function CourseView({
               </div>
             )}
             {miscMaterials.map((material) => (
-              <button
-                className="file-row quiz-row"
-                key={material.id}
-                onClick={() => void openMaterialFile(material)}
-              >
-                <span className="file-icon">
-                  {extLabel(material.file_name, material.mime_type)}
-                </span>
-                <div>
-                  <b>{material.file_name}</b>
-                  <small>
-                    {DATE_FMT.format(new Date(material.created_at))}追加
-                  </small>
-                </div>
+              <div className="file-row" key={material.id}>
+                <button
+                  className="file-row-open"
+                  onClick={() => void openMaterialFile(material)}
+                >
+                  <span className="file-icon">
+                    {extLabel(material.file_name, material.mime_type)}
+                  </span>
+                  <div>
+                    <b>{material.file_name}</b>
+                    <small>
+                      {DATE_FMT.format(new Date(material.created_at))}追加
+                    </small>
+                  </div>
+                </button>
                 <span className="private-pill">
                   {shelf.shares.length > 0 ? "共有中" : "自分のみ"}
                 </span>
-              </button>
+                {isOwner && (
+                  <RowMenu
+                    items={[
+                      {
+                        label: "削除",
+                        danger: true,
+                        onSelect: () => confirmDeleteMaterial(material),
+                      },
+                    ]}
+                  />
+                )}
+              </div>
             ))}
           </div>
         </div>

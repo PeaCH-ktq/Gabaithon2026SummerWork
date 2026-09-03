@@ -106,7 +106,6 @@
 .file-list {
   border: 1px solid var(--line);
   border-radius: 12px;
-  overflow: hidden;
 }
 .file-row {
   display: flex;
@@ -118,9 +117,31 @@
   width: 100%;
   background: white;
   text-align: left;
+  position: relative;
 }
-.file-row:last-child {
+.file-list > .file-row:first-child,
+.file-list > .empty-state:first-child {
+  border-radius: 12px 12px 0 0;
+}
+.file-list > .file-row:last-child {
   border-bottom: 0;
+  border-radius: 0 0 12px 12px;
+}
+.file-row-open {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  background: none;
+  text-align: left;
+  padding: 0;
+  cursor: pointer;
+}
+.file-row-open > div {
+  flex: 1;
+  min-width: 0;
 }
 .file-icon,
 .quiz-icon {
@@ -171,6 +192,45 @@
 }
 .quiz-row:hover {
   background: #fafaf8;
+}
+.row-menu {
+  position: relative;
+}
+.row-menu > button {
+  border: 0;
+  background: none;
+  cursor: pointer;
+  color: var(--muted);
+  padding: 4px;
+}
+.row-menu-popup {
+  position: absolute;
+  right: 0;
+  top: 100%;
+  z-index: 20;
+  background: white;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.1);
+  padding: 4px;
+  min-width: 120px;
+}
+.row-menu-popup button {
+  display: block;
+  width: 100%;
+  text-align: left;
+  border: 0;
+  background: none;
+  border-radius: 7px;
+  padding: 8px 12px;
+  font-size: 11px;
+  cursor: pointer;
+}
+.row-menu-popup button:hover {
+  background: #fafaf8;
+}
+.row-menu-popup button.danger {
+  color: var(--coral);
 }
 
 @media (max-width: 720px) {

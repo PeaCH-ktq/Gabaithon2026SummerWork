@@ -105,6 +105,23 @@ export async function updateShelf(
 }
 
 export async function deleteShelf(supabase: DB, id: string): Promise<void> {
+  // 先に Storage 上の実ファイルを消す。shelves を消すと materials 行が
+  // FK カスケードで消えて storage_path を追えなくなり、孤児オブジェクトが
+  // ストレージ課金対象として残り続けるため（行削除だけでは不十分）。
+  const paths = unwrap(
+    await supabase.from("materials").select("storage_path").eq("shelf_id", id),
+    "棚の資料の取得",
+  ).map((row) => row.storage_path);
+  if (paths.length > 0) {
+    const { error: removeError } = await supabase.storage
+      .from("materials")
+      .remove(paths);
+    if (removeError) {
+      console.error("[data] 棚の資料ファイル削除", removeError);
+      throw new Error("棚の資料ファイルの削除に失敗しました。");
+    }
+  }
+
   const { error } = await supabase.from("shelves").delete().eq("id", id);
   if (error) {
     console.error("[data] 棚の削除", error);

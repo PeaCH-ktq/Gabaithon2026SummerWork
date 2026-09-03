@@ -41,6 +41,12 @@ export const FILE_POLL = {
  */
 export const MAX_MATERIAL_BYTES = 50 * 1024 * 1024;
 
+/** 1回の生成で参照できる資料の最大件数。Gemini のコンテキストと maxDuration=300 の保護。 */
+export const MAX_MATERIALS_PER_REQUEST = 6;
+
+/** 1回の生成で参照できる資料の合計バイト数の上限。単体の MAX_MATERIAL_BYTES とは別に効く。 */
+export const MAX_TOTAL_MATERIAL_BYTES = 100 * 1024 * 1024;
+
 /** 受け付ける資料の MIME タイプ。 */
 export const ALLOWED_MATERIAL_MIME_TYPES = [
   "application/pdf",
