@@ -32,6 +32,22 @@ export function toISOFromLocal(date: string, time: string): string | null {
   return d.toISOString();
 }
 
+/**
+ * ISO 文字列を "たった今" / "5分前" / "3時間前" / "2日前" の相対表記にする。
+ * 7日以上前は "8月30日（日）" 形式にフォールバックする。
+ */
+export function formatRelativeTime(iso: string): string {
+  const diffMs = Date.now() - new Date(iso).getTime();
+  const minutes = Math.floor(diffMs / 60_000);
+  if (minutes < 1) return "たった今";
+  if (minutes < 60) return `${minutes}分前`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}時間前`;
+  const days = Math.floor(hours / 24);
+  if (days < 7) return `${days}日前`;
+  return formatSessionDate(iso);
+}
+
 /** 今日の日付を `<input type="date">` 用の "YYYY-MM-DD" にする。 */
 export function todayLocalDate(): string {
   const d = new Date();

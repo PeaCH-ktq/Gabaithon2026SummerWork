@@ -28,6 +28,7 @@ import { createStudySession, listUpcomingSessions } from "@/lib/data/studySessio
 import { getMyProfile, updateDisplayName } from "@/lib/data/profiles";
 import {
   createAssignment,
+  deleteAssignment,
   deleteAssignmentReport,
   listAssignments,
   listMyAssignmentReports,
@@ -77,6 +78,7 @@ export default function Home() {
   const [assignmentsState, setAssignmentsState] = useState<LoadState>("loading");
   const [savingAssignment, setSavingAssignment] = useState(false);
   const [savingAssignmentReport, setSavingAssignmentReport] = useState(false);
+  const [deletingAssignment, setDeletingAssignment] = useState(false);
   const [profile, setProfile] = useState<AccountProfile | null>(null);
   const [profileState, setProfileState] = useState<LoadState>("loading");
   const [savingProfile, setSavingProfile] = useState(false);
@@ -502,6 +504,19 @@ export default function Home() {
     }
   }
 
+  async function removeAssignment(assignmentId: string) {
+    setDeletingAssignment(true);
+    try {
+      await deleteAssignment(supabase, assignmentId);
+      await loadAssignments();
+      notify("課題を削除しました");
+    } catch (err) {
+      notify(err instanceof Error ? err.message : "課題の削除に失敗しました");
+    } finally {
+      setDeletingAssignment(false);
+    }
+  }
+
   async function restoreAssignment(assignmentId: string) {
     try {
       await deleteAssignmentReport(supabase, assignmentId);
@@ -621,11 +636,14 @@ export default function Home() {
             completed={completedAssignments}
             assignmentsState={assignmentsState}
             shelves={shelves}
+            userId={userId}
             saving={savingAssignment}
             savingReport={savingAssignmentReport}
+            deleting={deletingAssignment}
             onAddTask={addAssignment}
             onRestore={restoreAssignment}
             onSaveReport={saveAssignmentReport}
+            onDelete={removeAssignment}
             openCourse={openCourse}
           />
         )}

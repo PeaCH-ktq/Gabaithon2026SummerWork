@@ -2,11 +2,12 @@
 
 import { useState } from "react";
 import type { LoadState, Notify, Shelf } from "../../types";
-import type { AssignmentView } from "@/lib/format/assignments";
+import { formatMinutes, type AssignmentView } from "@/lib/format/assignments";
 import {
   AssignmentReportModal,
   type AssignmentReport,
 } from "../modals/AssignmentReportModal";
+import { AssignmentDetailModal } from "../modals/AssignmentDetailModal";
 import { Button, Icon } from "../ui";
 
 type CompletedTask = AssignmentView & { report: AssignmentReport };
@@ -17,8 +18,10 @@ type Props = {
   completed: CompletedTask[];
   assignmentsState: LoadState;
   shelves: Shelf[];
+  userId: string | null;
   saving: boolean;
   savingReport: boolean;
+  deleting: boolean;
   onAddTask: (values: {
     title: string;
     shelfId: string;
@@ -29,6 +32,7 @@ type Props = {
     assignmentId: string,
     report: AssignmentReport,
   ) => Promise<void>;
+  onDelete: (assignmentId: string) => Promise<void>;
   openCourse: (shelfId: string) => void;
 };
 
@@ -38,14 +42,18 @@ export function TasksView({
   completed,
   assignmentsState,
   shelves,
+  userId,
   saving,
   savingReport,
+  deleting,
   onAddTask,
   onRestore,
   onSaveReport,
+  onDelete,
   openCourse,
 }: Props) {
   const [reportTarget, setReportTarget] = useState<string | null>(null);
+  const [detailTarget, setDetailTarget] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [title, setTitle] = useState("");
   const [shelfId, setShelfId] = useState(shelves[0]?.id ?? "");
@@ -78,6 +86,16 @@ export function TasksView({
     setDate("");
     setShowForm(false);
     notify("課題を追加しました");
+  }
+
+  const detail =
+    [...upcoming, ...completed].find((task) => task.id === detailTarget) ?? null;
+
+  async function removeAssignment() {
+    if (!detail) return;
+    if (!window.confirm(`「${detail.title}」を削除します。`)) return;
+    await onDelete(detail.id);
+    setDetailTarget(null);
   }
 
   const upcomingTarget = upcoming.find((task) => task.id === reportTarget);
@@ -170,17 +188,27 @@ export function TasksView({
             </div>
           )}
           {upcoming.map((item, index) => (
-            <article className="task-card" key={item.id}>
+            <article
+              className="task-card"
+              key={item.id}
+              onClick={() => setDetailTarget(item.id)}
+            >
               <button
                 aria-label={`${item.title}を完了`}
                 title="完了にする"
                 className={`task-check ${index === 0 ? "urgent" : ""}`}
-                onClick={() => openReport(item.id)}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  openReport(item.id);
+                }}
               />
               <div>
                 <button
                   className="task-course"
-                  onClick={() => openCourse(item.shelfId)}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    openCourse(item.shelfId);
+                  }}
                 >
                   {item.course}
                 </button>
@@ -202,19 +230,29 @@ export function TasksView({
             終わった課題 <span>{completed.length}</span>
           </h2>
           {completed.map((task) => (
-            <article className="task-card done" key={task.id}>
+            <article
+              className="task-card done"
+              key={task.id}
+              onClick={() => setDetailTarget(task.id)}
+            >
               <button
                 className="task-check"
                 aria-label={`${task.title}を未完了に戻す`}
                 title="未完了に戻す"
-                onClick={() => restoreTask(task)}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  void restoreTask(task);
+                }}
               >
                 <Icon name="check" size={15} />
               </button>
               <div>
                 <button
                   className="task-course"
-                  onClick={() => openCourse(task.shelfId)}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    openCourse(task.shelfId);
+                  }}
                 >
                   {task.course}
                 </button>
@@ -225,13 +263,31 @@ export function TasksView({
                 </p>
               </div>
               <span className="complete-tag">完了</span>
-              <Button icon="clock" onClick={() => openReport(task.id)}>
-                結果を編集
-              </Button>
+              <span onClick={(event) => event.stopPropagation()}>
+                <Button icon="clock" onClick={() => openReport(task.id)}>
+                  結果を編集
+                </Button>
+              </span>
             </article>
           ))}
         </section>
       </div>
+
+      {detail && (
+        <AssignmentDetailModal
+          course={detail.course}
+          title={detail.title}
+          date={detail.date}
+          canDelete={detail.createdBy === userId}
+          deleting={deleting}
+          onClose={() => setDetailTarget(null)}
+          onReport={() => {
+            setDetailTarget(null);
+            openReport(detail.id);
+          }}
+          onDelete={() => void removeAssignment()}
+        />
+      )}
 
       {target && (
         <AssignmentReportModal
@@ -245,10 +301,4 @@ export function TasksView({
       )}
     </>
   );
-}
-
-function formatMinutes(minutes: number) {
-  const hours = Math.floor(minutes / 60);
-  const rest = minutes % 60;
-  return hours ? `${hours}時間${rest ? `${rest}分` : ""}` : `${rest}分`;
 }

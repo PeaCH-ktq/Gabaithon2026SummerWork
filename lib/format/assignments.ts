@@ -35,11 +35,19 @@ export function pickDeadlineColor(dueAt: string): string {
   return "green";
 }
 
+/** "2時間30分" / "45分" のような、かかった時間の表示。 */
+export function formatMinutes(minutes: number): string {
+  const hours = Math.floor(minutes / 60);
+  const rest = minutes % 60;
+  return hours ? `${hours}時間${rest ? `${rest}分` : ""}` : `${rest}分`;
+}
+
 /** 課題一覧・課題カードの表示に使う整形済みビュー。 */
 export type AssignmentView = {
   id: string;
   shelfId: string;
   groupId: string | null;
+  createdBy: string;
   dueAt: string;
   title: string;
   course: string;
@@ -49,13 +57,21 @@ export type AssignmentView = {
 };
 
 export function buildAssignmentView(
-  row: { id: string; shelf_id: string; group_id: string | null; title: string; due_at: string },
+  row: {
+    id: string;
+    shelf_id: string;
+    group_id: string | null;
+    created_by: string;
+    title: string;
+    due_at: string;
+  },
   courseName: string,
 ): AssignmentView {
   return {
     id: row.id,
     shelfId: row.shelf_id,
     groupId: row.group_id,
+    createdBy: row.created_by,
     dueAt: row.due_at,
     title: row.title,
     course: courseName,

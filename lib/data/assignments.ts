@@ -71,6 +71,21 @@ export async function upsertAssignmentReport(
   );
 }
 
+/** 課題を削除する（RLS: `assignments_delete_own` により作成者のみ）。 */
+export async function deleteAssignment(
+  supabase: DB,
+  assignmentId: string,
+): Promise<void> {
+  const { error } = await supabase
+    .from("assignments")
+    .delete()
+    .eq("id", assignmentId);
+  if (error) {
+    console.error("[data] 課題の削除", error);
+    throw new Error("課題の削除に失敗しました。");
+  }
+}
+
 /** 課題を未完了に戻す（＝自分の結果報告を削除）。 */
 export async function deleteAssignmentReport(
   supabase: DB,
@@ -87,6 +102,69 @@ export async function deleteAssignmentReport(
     console.error("[data] 課題結果の削除", error);
     throw new Error("未完了に戻す操作に失敗しました。");
   }
+}
+
+/** グループの「みんなの学習記録」1件分（メンバーの課題結果報告）。 */
+export type GroupStudyLogEntry = {
+  reportId: string;
+  assignmentTitle: string;
+  minutesSpent: number;
+  comment: string | null;
+  createdAt: string;
+  userId: string;
+  displayName: string;
+  avatarUrl: string | null;
+};
+
+/**
+ * グループに共有された課題へのメンバーの結果報告一覧（新しい順、直近30件）。
+ * RLS（`assignment_reports_select`）により、グループ共有課題の report は
+ * メンバー全員に見える。埋め込み JOIN は使わず 3 クエリ + JS 結合。
+ */
+export async function listGroupStudyLog(
+  supabase: DB,
+  groupId: string,
+): Promise<GroupStudyLogEntry[]> {
+  const assignments = unwrap(
+    await supabase
+      .from("assignments")
+      .select("id, title")
+      .eq("group_id", groupId),
+    "学習記録の取得",
+  );
+  if (assignments.length === 0) return [];
+  const titleById = new Map(assignments.map((a) => [a.id, a.title]));
+
+  const reports = unwrap(
+    await supabase
+      .from("assignment_reports")
+      .select("*")
+      .in("assignment_id", assignments.map((a) => a.id))
+      .order("created_at", { ascending: false })
+      .limit(30),
+    "学習記録の取得",
+  );
+  if (reports.length === 0) return [];
+
+  const profiles = unwrap(
+    await supabase
+      .from("profiles")
+      .select("id, display_name, avatar_url")
+      .in("id", [...new Set(reports.map((r) => r.user_id))]),
+    "プロフィールの取得",
+  );
+  const profileById = new Map(profiles.map((p) => [p.id, p]));
+
+  return reports.map((r) => ({
+    reportId: r.id,
+    assignmentTitle: titleById.get(r.assignment_id) ?? "（削除された課題）",
+    minutesSpent: r.minutes_spent,
+    comment: r.comment,
+    createdAt: r.created_at,
+    userId: r.user_id,
+    displayName: profileById.get(r.user_id)?.display_name ?? "（不明なユーザー）",
+    avatarUrl: profileById.get(r.user_id)?.avatar_url ?? null,
+  }));
 }
 
 /**

@@ -161,6 +161,9 @@
 .text-field textarea { border: 1px solid var(--line); border-radius: 9px; padding: 10px 12px; background: #faf9f6; resize: vertical; font: inherit; font-weight: 400; }
 .text-field>small { align-self: flex-end; color: var(--muted); font-weight: 400; }
 .report-task-name { margin-top: 6px; color: var(--indigo) !important; font-weight: 700; }
+/* 課題詳細モーダルの講義名・日付の行（カード表記より少し大きめ）。 */
+.detail-line { display: flex; align-items: center; gap: 5px; margin-top: 8px; font-size: 13px; color: var(--muted); }
+.small-modal h2 + .detail-line { margin-top: 4px; }
 .duration-fields { margin-top: 20px; border: 0; padding: 0; display: flex; gap: 12px; }
 .duration-fields legend { margin-bottom: 7px; font-size: 10px; font-weight: 700; }
 .duration-fields label { display: flex; align-items: center; gap: 6px; font-size: 11px; }

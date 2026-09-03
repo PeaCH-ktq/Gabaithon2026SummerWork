@@ -3,11 +3,15 @@ import { useEffect, useState } from "react";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/lib/supabase/types";
 import { listGroupMembers, leaveGroup } from "@/lib/data/groups";
+import { listGroupStudyLog, type GroupStudyLogEntry } from "@/lib/data/assignments";
 import { setShelfVisible } from "@/lib/data/shares";
 import { deleteStudySession } from "@/lib/data/studySessions";
 import { needsReauth, summarizeSync, syncSessionToCalendar, unsyncSessionFromCalendar } from "@/lib/api/calendar";
 import { signInWithGoogle } from "@/lib/supabase/auth";
-import { formatSessionDate, formatSessionRange } from "@/lib/format/datetime";
+import { formatMinutes } from "@/lib/format/assignments";
+import { formatRelativeTime, formatSessionDate, formatSessionRange } from "@/lib/format/datetime";
+
+const AVATAR_COLORS = ["coral", "green", "indigo"] as const;
 import type { GroupMember, GroupRow, LoadState, Notify, Shelf, StudySessionRow } from "../../types";
 import { Button, Icon } from "../ui";
 
@@ -32,6 +36,8 @@ export function GroupView({ supabase, group, groupsState, userId, shelves, sessi
   const [inviteOpen, setInviteOpen] = useState(false);
   const [members, setMembers] = useState<GroupMember[]>([]);
   const [membersState, setMembersState] = useState<LoadState>("loading");
+  const [studyLog, setStudyLog] = useState<GroupStudyLogEntry[]>([]);
+  const [studyLogState, setStudyLogState] = useState<LoadState>("loading");
   const [leaving, setLeaving] = useState(false);
   const [togglingShelfId, setTogglingShelfId] = useState<string | null>(null);
   const [syncingId, setSyncingId] = useState<string | null>(null);
@@ -51,6 +57,24 @@ export function GroupView({ supabase, group, groupsState, userId, shelves, sessi
       } catch (err) {
         console.error(err);
         if (active) setMembersState("error");
+      }
+    })();
+    return () => { active = false; };
+  }, [supabase, group]);
+
+  useEffect(() => {
+    if (!group) return;
+    let active = true;
+    void (async () => {
+      await Promise.resolve();
+      if (!active) return;
+      setStudyLogState("loading");
+      try {
+        const rows = await listGroupStudyLog(supabase, group.id);
+        if (active) { setStudyLog(rows); setStudyLogState("ready"); }
+      } catch (err) {
+        console.error(err);
+        if (active) setStudyLogState("error");
       }
     })();
     return () => { active = false; };
@@ -282,34 +306,27 @@ export function GroupView({ supabase, group, groupsState, userId, shelves, sessi
         <section className="content-card activity">
           <p className="eyebrow">ACTIVITY</p>
           <h2>みんなの学習記録</h2>
-          {[
-            {
-              who: "あかり",
-              initial: "あ",
-              color: "coral",
-              task: "正規化レポート",
-              time: "4時間10分",
-              note: "第3正規形の具体例で時間がかかったので、先に例を決めてから書くのがおすすめ。",
-            },
-            {
-              who: "けんた",
-              initial: "け",
-              color: "green",
-              task: "デッドロック演習",
-              time: "2時間30分",
-              note: "第6回の資料スライド18を読むと進めやすかった。",
-            },
-          ].map((p) => (
-            <article className="activity-row" key={p.who}>
-              <span className={`avatar ${p.color}`}>{p.initial}</span>
+          {studyLogState === "loading" && <p className="muted">読み込んでいます…</p>}
+          {studyLogState === "error" && <p className="muted">学習記録の取得に失敗しました</p>}
+          {studyLogState === "ready" && studyLog.length === 0 && (
+            <div className="empty-state">
+              <b>まだ学習記録がありません</b>
+              <p>課題を解いて結果を記録すると、ここにみんなの記録が並びます。</p>
+            </div>
+          )}
+          {studyLog.map((entry, i) => (
+            <article className="activity-row" key={entry.reportId}>
+              <span className={`avatar ${AVATAR_COLORS[i % AVATAR_COLORS.length]}`}>
+                {entry.displayName.charAt(0) || "?"}
+              </span>
               <div>
                 <p>
-                  <b>{p.who}</b>
-                  <small>3時間前</small>
+                  <b>{entry.displayName}</b>
+                  <small>{formatRelativeTime(entry.createdAt)}</small>
                 </p>
-                <h3>{p.task}</h3>
-                <span className="spent">{p.time}</span>
-                <p className="note">{p.note}</p>
+                <h3>{entry.assignmentTitle}</h3>
+                <span className="spent">{formatMinutes(entry.minutesSpent)}</span>
+                {entry.comment && <p className="note">{entry.comment}</p>}
               </div>
             </article>
           ))}
