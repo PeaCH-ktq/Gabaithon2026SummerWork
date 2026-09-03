@@ -81,11 +81,16 @@ export function CourseView({
             {shelf.room ?? "教室未設定"}
           </p>
         </div>
-        {isOwner && <Button onClick={editCourse}>棚を編集</Button>}
         {isOwner && (
-          <Button primary icon="sparkle" onClick={startCreate}>
-            問題をつくる
-          </Button>
+          <div className="course-head-actions">
+            <Button onClick={editCourse}>棚を編集</Button>
+            <Button icon="share" onClick={openShare}>
+              {shelf.shares.length > 0 ? "共有設定" : "グループに共有"}
+            </Button>
+            <Button primary icon="sparkle" onClick={startCreate}>
+              問題をつくる
+            </Button>
+          </div>
         )}
       </header>
       <div className="privacy-note">
@@ -270,14 +275,9 @@ export function CourseView({
               <p>印刷、PDF保存、グループ共有ができます。</p>
             </div>
             {isOwner && (
-              <>
-                <Button primary icon="sparkle" onClick={startCreate}>
-                  新しくつくる
-                </Button>
-                <Button icon="share" onClick={openShare}>
-                  {shelf.shares.length > 0 ? "共有設定" : "グループに共有"}
-                </Button>
-              </>
+              <Button primary icon="sparkle" onClick={startCreate}>
+                新しくつくる
+              </Button>
             )}
           </div>
           <div className="file-list">

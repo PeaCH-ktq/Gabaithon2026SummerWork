@@ -11,6 +11,8 @@
   margin-bottom: 28px;
 }
 .course-head .button { margin-left: auto; }
+.course-head-actions { margin-left: auto; display: flex; align-items: center; gap: 10px; }
+.course-head-actions .button { margin-left: 0; }
 .course-code {
   width: 62px;
   height: 62px;
@@ -125,6 +127,8 @@
   .course-head { align-items: flex-start; flex-wrap: wrap; }
   .course-head h1 { font-size: 24px; }
   .course-head .button { margin-left: 80px; }
+  .course-head-actions { margin-left: 0; flex-wrap: wrap; }
+  .course-head-actions .button { margin-left: 0; }
   .private-pill,.share-pill { display: none; }
   .content-card { padding: 17px; }
 }

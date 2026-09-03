@@ -32,9 +32,6 @@ export function ShareModal({
         </button>
         <p className="eyebrow">SHARE SHELF</p>
         <h2>{shelf.course_name}をグループに共有</h2>
-        <div className="copyright-note">
-          講義資料は共有されません。共有されるのはこの棚の問題集だけです。
-        </div>
         {groups.length === 0 ? (
           <div className="empty-state">
             <b>所属しているグループがありません</b>
