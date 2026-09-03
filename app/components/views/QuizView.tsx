@@ -97,13 +97,13 @@ function AnswerKey({ questionSet }: { questionSet: QuestionSet }) {
             {q.answer && (
               <p>
                 <span className="answer-key-tag">解答</span>
-                <MathText text={q.answer} />
+                <MathText text={q.answer} className="answer-key-math" />
               </p>
             )}
             {q.explanation && (
               <p className="answer-key-explanation">
                 <span className="answer-key-tag">解説</span>
-                <MathText text={q.explanation} />
+                <MathText text={q.explanation} className="answer-key-math" />
               </p>
             )}
           </li>

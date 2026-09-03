@@ -93,6 +93,8 @@
   padding: 14px 16px;
   font-size: 12px;
   line-height: 1.8;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 .answer-key li > b {
   display: block;
@@ -102,23 +104,35 @@
 }
 .answer-key li p {
   margin: 0;
+  display: flex;
+  align-items: flex-start;
+  min-width: 0;
 }
 .answer-key li p + p {
   margin-top: 6px;
 }
+/* 長い数式（インライン・独立行とも）は折り返せないため、はみ出す場合は
+   タグを固定したまま数式部分だけ横スクロールさせる。 */
+.answer-key-math {
+  display: block;
+  flex: 1;
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+.answer-key .katex { max-width: 100%; }
+.answer-key .katex-display { margin: 0.4em 0; }
 .answer-key-explanation {
   color: var(--muted);
 }
 .answer-key-tag {
   display: inline-block;
+  flex-shrink: 0;
   min-width: 30px;
   margin-right: 8px;
   font-size: 9px;
   font-weight: 700;
   color: var(--muted);
-}
-.answer-key .katex {
-  max-width: 100%;
 }
 
 @media (max-width:720px) {
