@@ -54,7 +54,7 @@ export function Sidebar({
         aria-label="Tan-E ホーム"
       >
         <span className="brand-mark-img">
-          <img src="/Tan-E_icon.svg" alt="Tan-E" width={55} height={55} />
+          <img src="/Tan-E_icon.svg" alt="Tan-E" width={75} height={75} />
         </span>
         <span className="brand-copy">
           <b>Tan-E</b>
