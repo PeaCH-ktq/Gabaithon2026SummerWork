@@ -1,112 +1,90 @@
 "use client";
 
-import { useState, type Dispatch, type SetStateAction } from "react";
-import type { Assignment, Notify } from "../../types";
+import { useState } from "react";
+import type { LoadState, Notify, Shelf } from "../../types";
+import type { AssignmentView } from "@/lib/format/assignments";
 import {
   AssignmentReportModal,
   type AssignmentReport,
 } from "../modals/AssignmentReportModal";
 import { Button, Icon } from "../ui";
 
-type CompletedTask = Assignment & { report?: AssignmentReport };
-
-const initialCompleted: CompletedTask[] = [
-  {
-    title: "SQL演習課題 第2回",
-    course: "データベース論",
-    date: "8月24日 23:59",
-    left: "完了",
-    color: "green",
-    report: {
-      minutesSpent: 200,
-      comment: "JOINの条件を図にしてから解くと整理しやすかった。",
-    },
-  },
-  {
-    title: "プロセススケジューリング演習",
-    course: "オペレーティングシステム",
-    date: "8月22日 17:00",
-    left: "完了",
-    color: "green",
-    report: {
-      minutesSpent: 105,
-      comment: "ラウンドロビンの待ち時間計算に時間がかかった。",
-    },
-  },
-];
+type CompletedTask = AssignmentView & { report: AssignmentReport };
 
 type Props = {
   notify: Notify;
-  items: Assignment[];
-  setItems: Dispatch<SetStateAction<Assignment[]>>;
-  courseNames: string[];
-  openCourse: (courseName: string) => void;
+  upcoming: AssignmentView[];
+  completed: CompletedTask[];
+  assignmentsState: LoadState;
+  shelves: Shelf[];
+  saving: boolean;
+  savingReport: boolean;
+  onAddTask: (values: {
+    title: string;
+    shelfId: string;
+    dueAt: string;
+  }) => Promise<void>;
+  onRestore: (assignmentId: string) => Promise<void>;
+  onSaveReport: (
+    assignmentId: string,
+    report: AssignmentReport,
+  ) => Promise<void>;
+  openCourse: (shelfId: string) => void;
 };
 
 export function TasksView({
   notify,
-  items,
-  setItems,
-  courseNames,
+  upcoming,
+  completed,
+  assignmentsState,
+  shelves,
+  saving,
+  savingReport,
+  onAddTask,
+  onRestore,
+  onSaveReport,
   openCourse,
 }: Props) {
-  const [completed, setCompleted] = useState<CompletedTask[]>(initialCompleted);
   const [reportTarget, setReportTarget] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [title, setTitle] = useState("");
-  const [course, setCourse] = useState("データベース論");
-  const [date, setDate] = useState("2026-09-08T23:59");
+  const [shelfId, setShelfId] = useState(shelves[0]?.id ?? "");
+  const [date, setDate] = useState("");
 
-  function completeTask(task: Assignment) {
-    setItems((current) =>
-      current.filter((item) => item.title !== task.title),
-    );
-    setCompleted((current) => [{ ...task }, ...current]);
-    setReportTarget(task.title);
-    notify("課題を完了にしました");
+  function openReport(assignmentId: string) {
+    setReportTarget(assignmentId);
   }
 
-  function restoreTask(task: CompletedTask) {
-    setCompleted((current) =>
-      current.filter((item) => item.title !== task.title),
-    );
-    setItems((current) => [{ ...task, left: "期限を確認" }, ...current]);
+  async function restoreTask(task: CompletedTask) {
+    await onRestore(task.id);
     notify("未完了に戻しました");
   }
 
-  function saveReport(report: AssignmentReport) {
-    setCompleted((current) =>
-      current.map((task) =>
-        task.title === reportTarget ? { ...task, report } : task,
-      ),
-    );
+  async function saveReport(report: AssignmentReport) {
+    if (!reportTarget) return;
+    await onSaveReport(reportTarget, report);
     setReportTarget(null);
     notify("課題の結果を投稿しました");
   }
 
-  function addTask() {
-    if (!title.trim()) return;
-    const due = new Date(date);
-    const monthAndDay = `${due.getMonth() + 1}月${due.getDate()}日`;
-    const hours = String(due.getHours()).padStart(2, "0");
-    const minutes = String(due.getMinutes()).padStart(2, "0");
-    const formattedDate = `${monthAndDay} ${hours}:${minutes}`;
-    setItems((current) => [
-      ...current,
-      {
-        title: title.trim(),
-        course,
-        date: formattedDate,
-        left: "期限を確認",
-        color: "green",
-      },
-    ]);
+  async function addTask() {
+    if (!title.trim() || !shelfId || !date) return;
+    await onAddTask({
+      title: title.trim(),
+      shelfId,
+      dueAt: new Date(date).toISOString(),
+    });
     setTitle("");
+    setDate("");
     setShowForm(false);
     notify("課題を追加しました");
   }
 
-  const target = completed.find((task) => task.title === reportTarget);
+  const upcomingTarget = upcoming.find((task) => task.id === reportTarget);
+  const completedTarget = completed.find((task) => task.id === reportTarget);
+  const target = upcomingTarget ?? completedTarget;
+  const targetInitial = completedTarget?.report;
+  const targetSharedWithGroup = target ? target.groupId !== null : false;
 
   return (
     <>
@@ -115,10 +93,21 @@ export function TasksView({
           <p className="eyebrow">DEADLINES</p>
           <h1>課題</h1>
         </div>
-        <Button primary icon="plus" onClick={() => setShowForm(true)}>
+        <Button
+          primary
+          icon="plus"
+          onClick={() => setShowForm(true)}
+          disabled={shelves.length === 0}
+        >
           課題を追加
         </Button>
       </header>
+
+      {shelves.length === 0 && (
+        <p className="muted">
+          先に講義棚を作成すると、課題を追加できるようになります。
+        </p>
+      )}
 
       {showForm && (
         <section className="content-card inline-form">
@@ -135,8 +124,15 @@ export function TasksView({
             </label>
             <label className="text-field">
               講義
-              <select value={course} onChange={(event) => setCourse(event.target.value)}>
-                {courseNames.map((name) => <option key={name}>{name}</option>)}
+              <select
+                value={shelfId}
+                onChange={(event) => setShelfId(event.target.value)}
+              >
+                {shelves.map((shelf) => (
+                  <option key={shelf.id} value={shelf.id}>
+                    {shelf.course_name}
+                  </option>
+                ))}
               </select>
             </label>
           </div>
@@ -149,10 +145,10 @@ export function TasksView({
             />
           </label>
           <div className="modal-actions">
-            <Button subtle onClick={() => setShowForm(false)}>
+            <Button subtle onClick={() => setShowForm(false)} disabled={saving}>
               キャンセル
             </Button>
-            <Button primary onClick={addTask}>
+            <Button primary onClick={addTask} disabled={saving}>
               追加する
             </Button>
           </div>
@@ -162,26 +158,29 @@ export function TasksView({
       <div className="task-board">
         <section>
           <h2>
-            これから <span>{items.length}</span>
+            これから <span>{upcoming.length}</span>
           </h2>
-          {items.length === 0 && (
+          {upcoming.length === 0 && assignmentsState === "loading" && (
+            <p className="muted">読み込み中…</p>
+          )}
+          {upcoming.length === 0 && assignmentsState !== "loading" && (
             <div className="empty-state">
               <b>未完了の課題はありません</b>
               <p>すべて完了しました。おつかれさまでした。</p>
             </div>
           )}
-          {items.map((item, index) => (
-            <article className="task-card" key={item.title}>
+          {upcoming.map((item, index) => (
+            <article className="task-card" key={item.id}>
               <button
                 aria-label={`${item.title}を完了`}
                 title="完了にする"
                 className={`task-check ${index === 0 ? "urgent" : ""}`}
-                onClick={() => completeTask(item)}
+                onClick={() => openReport(item.id)}
               />
               <div>
                 <button
                   className="task-course"
-                  onClick={() => openCourse(item.course)}
+                  onClick={() => openCourse(item.shelfId)}
                 >
                   {item.course}
                 </button>
@@ -203,7 +202,7 @@ export function TasksView({
             終わった課題 <span>{completed.length}</span>
           </h2>
           {completed.map((task) => (
-            <article className="task-card done" key={task.title}>
+            <article className="task-card done" key={task.id}>
               <button
                 className="task-check"
                 aria-label={`${task.title}を未完了に戻す`}
@@ -215,27 +214,19 @@ export function TasksView({
               <div>
                 <button
                   className="task-course"
-                  onClick={() => openCourse(task.course)}
+                  onClick={() => openCourse(task.shelfId)}
                 >
                   {task.course}
                 </button>
                 <h3>{task.title}</h3>
-                {task.report ? (
-                  <p>
-                    かかった時間 {formatMinutes(task.report.minutesSpent)} ・
-                    コメント投稿済み
-                  </p>
-                ) : (
-                  <p>結果はまだ投稿されていません</p>
-                )}
+                <p>
+                  かかった時間 {formatMinutes(task.report.minutesSpent)} ・
+                  コメント投稿済み
+                </p>
               </div>
               <span className="complete-tag">完了</span>
-              <Button
-                primary={!task.report}
-                icon="clock"
-                onClick={() => setReportTarget(task.title)}
-              >
-                {task.report ? "結果を編集" : "結果を投稿"}
+              <Button icon="clock" onClick={() => openReport(task.id)}>
+                結果を編集
               </Button>
             </article>
           ))}
@@ -245,9 +236,11 @@ export function TasksView({
       {target && (
         <AssignmentReportModal
           taskTitle={target.title}
-          initial={target.report}
+          initial={targetInitial}
+          sharedWithGroup={targetSharedWithGroup}
+          saving={savingReport}
           onClose={() => setReportTarget(null)}
-          onSave={saveReport}
+          onSave={(report) => void saveReport(report)}
         />
       )}
     </>

@@ -4,13 +4,12 @@ export type View = "home" | "course" | "quiz" | "tasks" | "group" | "account" | 
 export type Navigate = (view: View) => void;
 export type Notify = (message: string) => void;
 
-export type Assignment = {
-  title: string;
-  course: string;
-  date: string;
-  left: string;
-  color: string;
-};
+/** `assignments` テーブルの行そのもの。 */
+export type AssignmentRow = Database["public"]["Tables"]["assignments"]["Row"];
+
+/** `assignment_reports` テーブルの行そのもの。 */
+export type AssignmentReportRow =
+  Database["public"]["Tables"]["assignment_reports"]["Row"];
 
 /** `profiles` テーブルの行そのもの。 */
 export type ProfileRow = Database["public"]["Tables"]["profiles"]["Row"];

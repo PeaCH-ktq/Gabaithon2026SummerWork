@@ -17,7 +17,7 @@ import { GroupView } from "./components/views/GroupView";
 import { HomeView } from "./components/views/HomeView";
 import { QuizView } from "./components/views/QuizView";
 import { TasksView } from "./components/views/TasksView";
-import type { AccountProfile, Assignment, GroupRow, LoadState, MaterialRow, QuestionSetRow, Shelf, ShelfFormValues, StudySessionFormValues, StudySessionRow, View } from "./types";
+import type { AccountProfile, AssignmentReportRow, AssignmentRow, GroupRow, LoadState, MaterialRow, QuestionSetRow, Shelf, ShelfFormValues, StudySessionFormValues, StudySessionRow, View } from "./types";
 import { createClient } from "@/lib/supabase/client";
 import { createShelf, listShelves, updateShelf } from "@/lib/data/shelves";
 import { listMaterialsByShelf, uploadMaterial } from "@/lib/data/materials";
@@ -26,8 +26,17 @@ import { createGroup, joinGroupByCode, listMyGroups } from "@/lib/data/groups";
 import { shareShelf, unshareShelf } from "@/lib/data/shares";
 import { createStudySession, listUpcomingSessions } from "@/lib/data/studySessions";
 import { getMyProfile, updateDisplayName } from "@/lib/data/profiles";
+import {
+  createAssignment,
+  deleteAssignmentReport,
+  listAssignments,
+  listMyAssignmentReports,
+  pickAssignmentGroupId,
+  upsertAssignmentReport,
+} from "@/lib/data/assignments";
 import { pickShelfColor } from "@/lib/format/schedule";
-import { deadlines } from "./demo-data";
+import { buildAssignmentView, type AssignmentView } from "@/lib/format/assignments";
+import type { AssignmentReport } from "./components/modals/AssignmentReportModal";
 import type { QuestionSet } from "@/lib/gemini/schema";
 
 export default function Home() {
@@ -61,7 +70,13 @@ export default function Home() {
   const [sessions, setSessions] = useState<StudySessionRow[]>([]);
   const [sessionsState, setSessionsState] = useState<LoadState>("loading");
   const [savingSession, setSavingSession] = useState(false);
-  const [assignments, setAssignments] = useState<Assignment[]>(deadlines);
+  const [assignments, setAssignments] = useState<AssignmentRow[]>([]);
+  const [myAssignmentReports, setMyAssignmentReports] = useState<
+    AssignmentReportRow[]
+  >([]);
+  const [assignmentsState, setAssignmentsState] = useState<LoadState>("loading");
+  const [savingAssignment, setSavingAssignment] = useState(false);
+  const [savingAssignmentReport, setSavingAssignmentReport] = useState(false);
   const [profile, setProfile] = useState<AccountProfile | null>(null);
   const [profileState, setProfileState] = useState<LoadState>("loading");
   const [savingProfile, setSavingProfile] = useState(false);
@@ -164,6 +179,28 @@ export default function Home() {
   useEffect(() => {
     void Promise.resolve().then(() => loadSessions());
   }, [loadSessions]);
+
+  const loadAssignments = useCallback(async () => {
+    setAssignmentsState("loading");
+    try {
+      const [rows, reports] = await Promise.all([
+        listAssignments(supabase),
+        listMyAssignmentReports(supabase),
+      ]);
+      setAssignments(rows);
+      setMyAssignmentReports(reports);
+      setAssignmentsState("ready");
+      return rows;
+    } catch (err) {
+      console.error(err);
+      setAssignmentsState("error");
+      return [];
+    }
+  }, [supabase]);
+
+  useEffect(() => {
+    void Promise.resolve().then(() => loadAssignments());
+  }, [loadAssignments]);
 
   // グループ画面を開くたびに棚を取り直す。他人が共有した棚は初回マウント時の
   // 読み込みだけでは反映されないため（開きっぱなしのタブに他人の共有が届かない）。
@@ -395,6 +432,87 @@ export default function Home() {
     setModal("share");
   }
 
+  // 課題: assignments + shelves(講義名) + 自分の結果報告から表示用のビューを組み立てる。
+  // 自分の結果報告がある課題＝完了、無い課題＝未完了。
+  const myReportByAssignment = new Map(
+    myAssignmentReports.map((report) => [report.assignment_id, report]),
+  );
+  const assignmentViews = assignments.map((row) =>
+    buildAssignmentView(
+      row,
+      shelves.find((shelf) => shelf.id === row.shelf_id)?.course_name ??
+        "講義情報なし",
+    ),
+  );
+  const upcomingAssignments = assignmentViews.filter(
+    (item) => !myReportByAssignment.has(item.id),
+  );
+  const completedAssignments: (AssignmentView & { report: AssignmentReport })[] =
+    assignmentViews
+      .filter((item) => myReportByAssignment.has(item.id))
+      .map((item) => {
+        const report = myReportByAssignment.get(item.id)!;
+        return {
+          ...item,
+          report: { minutesSpent: report.minutes_spent, comment: report.comment ?? "" },
+        };
+      });
+
+  async function addAssignment(values: {
+    title: string;
+    shelfId: string;
+    dueAt: string;
+  }) {
+    setSavingAssignment(true);
+    try {
+      const shelf = shelves.find((item) => item.id === values.shelfId);
+      const groupId = shelf ? pickAssignmentGroupId(shelf) : null;
+      await createAssignment(supabase, {
+        shelf_id: values.shelfId,
+        group_id: groupId,
+        title: values.title,
+        due_at: values.dueAt,
+      });
+      await loadAssignments();
+    } catch (err) {
+      notify(err instanceof Error ? err.message : "課題の追加に失敗しました");
+    } finally {
+      setSavingAssignment(false);
+    }
+  }
+
+  async function saveAssignmentReport(
+    assignmentId: string,
+    report: AssignmentReport,
+  ) {
+    setSavingAssignmentReport(true);
+    try {
+      await upsertAssignmentReport(supabase, {
+        assignment_id: assignmentId,
+        minutes_spent: report.minutesSpent,
+        comment: report.comment,
+      });
+      await loadAssignments();
+    } catch (err) {
+      notify(
+        err instanceof Error ? err.message : "課題結果の投稿に失敗しました",
+      );
+    } finally {
+      setSavingAssignmentReport(false);
+    }
+  }
+
+  async function restoreAssignment(assignmentId: string) {
+    try {
+      await deleteAssignmentReport(supabase, assignmentId);
+      await loadAssignments();
+    } catch (err) {
+      notify(
+        err instanceof Error ? err.message : "未完了に戻す操作に失敗しました",
+      );
+    }
+  }
+
   return (
     <div className="app-shell">
       {/* 全画面で共通するサイドバーとメインナビゲーション。 */}
@@ -407,6 +525,7 @@ export default function Home() {
         onSelectGroup={setSelectedGroupId}
         onCreateGroup={() => setModal("group")}
         profile={profile}
+        upcomingAssignmentCount={upcomingAssignments.length}
       />
       <main className="main">
         {/* ホーム：今日の学習、講義棚、直近の締切。 */}
@@ -415,7 +534,7 @@ export default function Home() {
             supabase={supabase}
             shelves={shelves}
             shelvesState={shelvesState}
-            assignments={assignments}
+            assignments={upcomingAssignments}
             selectShelf={selectCourse}
             materialsByShelf={courseMaterials}
             materialsState={materialsState}
@@ -453,8 +572,8 @@ export default function Home() {
             materialsState={materialsState}
             questionSets={courseQuestionSets[selectedShelf.id] ?? []}
             questionSetsState={questionSetsState}
-            assignments={assignments.filter(
-              (assignment) => assignment.course === selectedShelf.course_name,
+            assignments={upcomingAssignments.filter(
+              (assignment) => assignment.shelfId === selectedShelf.id,
             )}
             openShelves={openShelves}
             openMaterial={() => setModal("material")}
@@ -498,15 +617,16 @@ export default function Home() {
         {view === "tasks" && (
           <TasksView
             notify={notify}
-            items={assignments}
-            setItems={setAssignments}
-            courseNames={shelves.map((shelf) => shelf.course_name)}
-            openCourse={(courseName) => {
-              const shelf = shelves.find(
-                (item) => item.course_name === courseName,
-              );
-              if (shelf) openCourse(shelf.id);
-            }}
+            upcoming={upcomingAssignments}
+            completed={completedAssignments}
+            assignmentsState={assignmentsState}
+            shelves={shelves}
+            saving={savingAssignment}
+            savingReport={savingAssignmentReport}
+            onAddTask={addAssignment}
+            onRestore={restoreAssignment}
+            onSaveReport={saveAssignmentReport}
+            openCourse={openCourse}
           />
         )}
         {/* グループ：勉強会、共有棚、メンバーの活動記録。 */}

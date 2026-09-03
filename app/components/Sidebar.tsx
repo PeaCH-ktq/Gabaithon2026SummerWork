@@ -15,9 +15,10 @@ type Props = {
   onSelectGroup: (id: string) => void;
   onCreateGroup: () => void;
   profile: AccountProfile | null;
+  upcomingAssignmentCount: number;
 };
 
-export function Sidebar({ view, navigate, openShelves, groups, selectedGroupId, onSelectGroup, onCreateGroup, profile }: Props) {
+export function Sidebar({ view, navigate, openShelves, groups, selectedGroupId, onSelectGroup, onCreateGroup, profile, upcomingAssignmentCount }: Props) {
   const [switcherOpen, setSwitcherOpen] = useState(false);
   const switcherRef = useRef<HTMLDivElement>(null);
   const selectedGroup = groups.find((g) => g.id === selectedGroupId) ?? null;
@@ -65,7 +66,9 @@ export function Sidebar({ view, navigate, openShelves, groups, selectedGroupId, 
           >
             <Icon name={item.icon as IconName} />
             <span>{item.label}</span>
-            {item.id === "tasks" && <em>3</em>}
+            {item.id === "tasks" && upcomingAssignmentCount > 0 && (
+              <em>{upcomingAssignmentCount}</em>
+            )}
           </button>
         ))}
         <span className="nav-label second">TOGETHER</span>

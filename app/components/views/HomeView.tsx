@@ -3,13 +3,13 @@ import type React from "react";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/lib/supabase/types";
 import type {
-  Assignment,
   LoadState,
   MaterialRow,
   Navigate,
   QuestionSetRow,
   Shelf,
 } from "../../types";
+import type { AssignmentView } from "@/lib/format/assignments";
 import { Button, Icon } from "../ui";
 import { CourseView } from "./CourseView";
 
@@ -25,7 +25,7 @@ type Props = {
   supabase: SupabaseClient<Database>;
   shelves: Shelf[];
   shelvesState: LoadState;
-  assignments: Assignment[];
+  assignments: AssignmentView[];
   navigate: Navigate;
   startCreate: () => void;
   openShelf: () => void;
@@ -120,7 +120,7 @@ export function HomeView({
           </div>
           <div className="overview-list">
             {assignments.slice(0, 2).map((item) => (
-              <button key={item.title} onClick={() => navigate("tasks")}>
+              <button key={item.id} onClick={() => navigate("tasks")}>
                 <span className={`date-box ${item.color}`}>
                   <b>{item.left}</b>
                   <small>{item.date}</small>

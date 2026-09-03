@@ -1,11 +1,11 @@
 import type {
-  Assignment,
   LoadState,
   MaterialRow,
   Navigate,
   QuestionSetRow,
   Shelf,
 } from "../../types";
+import type { AssignmentView } from "@/lib/format/assignments";
 import { formatSchedule } from "@/lib/format/schedule";
 import { createMaterialSignedUrl } from "@/lib/data/materials";
 import { Button, Icon } from "../ui";
@@ -28,7 +28,7 @@ type Props = {
   openQuiz: (id: string) => void;
   editCourse: () => void;
   openShare: () => void;
-  assignments: Assignment[];
+  assignments: AssignmentView[];
   openShelves: () => void;
   isOwner: boolean;
 };
@@ -121,7 +121,7 @@ export function CourseView({
         ) : (
           <div className="course-assignment-list">
             {assignments.map((assignment) => (
-              <button key={assignment.title} onClick={() => navigate("tasks")}>
+              <button key={assignment.id} onClick={() => navigate("tasks")}>
                 <span className={`date-box ${assignment.color}`}>
                   <b>{assignment.left}</b>
                   <small>{assignment.date}</small>
