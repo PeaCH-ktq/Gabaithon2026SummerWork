@@ -31,10 +31,10 @@ export function formatSchedule(
 
 /**
  * 棚のタブ色パレット（`app/demo-data.ts` の配色を流用）。
- * `shelves.color` の default は先頭の '#5866c5'。
+ * `shelves.color` の default は先頭のターコイズブルー '#14b8a6'。
  */
 export const SHELF_COLORS = [
-  "#5866c5",
+  "#14b8a6",
   "#ea8e72",
   "#54a887",
   "#b17fb6",

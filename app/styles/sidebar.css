@@ -34,7 +34,7 @@
   display: grid;
   place-items: center;
   transform: rotate(-5deg);
-  box-shadow: 0 6px 16px #5661bd40;
+  box-shadow: 0 6px 16px #14b8a640;
 }
 .brand-mark span {
   width: 14px;

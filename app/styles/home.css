@@ -168,7 +168,7 @@
   position: absolute;
   width: 300px;
   height: 300px;
-  border: 1px solid #5661bd1f;
+  border: 1px solid #14b8a61f;
   border-radius: 50%;
   right: -35px;
   top: -115px;
@@ -228,7 +228,7 @@
 }
 .progress-ring circle {
   fill: none;
-  stroke: #5661bd1f;
+  stroke: #14b8a61f;
   stroke-width: 7;
 }
 .progress-ring .progress {
