@@ -18,23 +18,14 @@ import { GroupView } from "./components/views/GroupView";
 import { HomeView } from "./components/views/HomeView";
 import { QuizView } from "./components/views/QuizView";
 import { TasksView } from "./components/views/TasksView";
-import type {
-  Assignment,
-  GroupRow,
-  LoadState,
-  MaterialRow,
-  Profile,
-  QuestionSetRow,
-  Shelf,
-  ShelfFormValues,
-  View,
-} from "./types";
+import type { Assignment, GroupRow, LoadState, MaterialRow, Profile, QuestionSetRow, Shelf, ShelfFormValues, StudySessionFormValues, StudySessionRow, View } from "./types";
 import { createClient } from "@/lib/supabase/client";
 import { createShelf, listShelves, updateShelf } from "@/lib/data/shelves";
 import { listMaterialsByShelf, uploadMaterial } from "@/lib/data/materials";
 import { listQuestionSetsByShelf } from "@/lib/data/questionSets";
 import { createGroup, joinGroupByCode, listMyGroups } from "@/lib/data/groups";
 import { shareShelf, unshareShelf } from "@/lib/data/shares";
+import { createStudySession, listUpcomingSessions } from "@/lib/data/studySessions";
 import { pickShelfColor } from "@/lib/format/schedule";
 import { deadlines } from "./demo-data";
 import type { QuestionSet } from "@/lib/gemini/schema";
@@ -67,6 +58,9 @@ export default function Home() {
   const [joiningGroup, setJoiningGroup] = useState(false);
   const [savingShare, setSavingShare] = useState(false);
   const [shareShelfId, setShareShelfId] = useState<string | null>(null);
+  const [sessions, setSessions] = useState<StudySessionRow[]>([]);
+  const [sessionsState, setSessionsState] = useState<LoadState>("loading");
+  const [savingSession, setSavingSession] = useState(false);
   const [assignments, setAssignments] = useState<Assignment[]>(deadlines);
   const [profile, setProfile] = useState<Profile>({
     displayName: "ゆうた",
@@ -137,6 +131,29 @@ export default function Home() {
   useEffect(() => {
     void Promise.resolve().then(() => loadGroups());
   }, [loadGroups]);
+
+  const loadSessions = useCallback(async () => {
+    if (!selectedGroupId) {
+      setSessions([]);
+      setSessionsState("ready");
+      return [];
+    }
+    setSessionsState("loading");
+    try {
+      const rows = await listUpcomingSessions(supabase, selectedGroupId);
+      setSessions(rows);
+      setSessionsState("ready");
+      return rows;
+    } catch (err) {
+      console.error(err);
+      setSessionsState("error");
+      return [];
+    }
+  }, [supabase, selectedGroupId]);
+
+  useEffect(() => {
+    void Promise.resolve().then(() => loadSessions());
+  }, [loadSessions]);
 
   const loadMaterials = useCallback(
     async (shelfId: string) => {
@@ -290,6 +307,21 @@ export default function Home() {
       );
     } finally {
       setSavingShare(false);
+    }
+  }
+
+  async function saveSession(values: StudySessionFormValues) {
+    if (!selectedGroupId) return;
+    setSavingSession(true);
+    try {
+      await createStudySession(supabase, { group_id: selectedGroupId, ...values });
+      await loadSessions();
+      setModal("none");
+      notify("勉強会を作成しました");
+    } catch (err) {
+      notify(err instanceof Error ? err.message : "勉強会の作成に失敗しました");
+    } finally {
+      setSavingSession(false);
     }
   }
 
@@ -451,30 +483,15 @@ export default function Home() {
             groupsState={groupsState}
             userId={userId}
             shelves={shelves}
+            sessions={sessions}
+            sessionsState={sessionsState}
             openCourse={openCourse}
             notify={notify}
             openSchedule={() => setModal("schedule")}
             openGroupModal={() => setModal("group")}
-            onLeft={() => {
-              void loadGroups();
-            }}
-            onSharesChanged={() => {
-              void loadShelves();
-            }}
-          />
-        )}
-        {view === "account" && (
-          <AccountView navigate={navigate} notify={notify} profile={profile} />
-        )}
-        {view === "profile-edit" && (
-          <ProfileEditView
-            navigate={navigate}
-            profile={profile}
-            onSave={(next) => {
-              setProfile(next);
-              navigate("account");
-              notify("プロフィールを更新しました");
-            }}
+            onLeft={() => { void loadGroups(); }}
+            onSharesChanged={() => { void loadShelves(); }}
+            onSessionsChanged={() => { void loadSessions(); }}
           />
         )}
         {view === "logout" && <LogoutView navigate={navigate} />}
@@ -493,8 +510,13 @@ export default function Home() {
         />
       )}
       {/* 新しい勉強会の日付・時刻・場所を入力するモーダル。 */}
-      {modal === "schedule" && (
-        <ScheduleModal onClose={() => setModal("none")} notify={notify} />
+      {modal === "schedule" && selectedGroup && (
+        <ScheduleModal
+          groupName={selectedGroup.name}
+          saving={savingSession}
+          onClose={() => setModal("none")}
+          onSave={(values) => void saveSession(values)}
+        />
       )}
       {modal === "shelf" && (
         <ShelfModal
