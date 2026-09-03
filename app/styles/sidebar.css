@@ -162,7 +162,7 @@
   align-items: center;
 }
 .sidebar-foot b { font-size: 12px; }
-.sidebar-foot small { font-size: 9px; color: var(--muted); white-space: nowrap; }
+.sidebar-foot small { font-size: 9px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 110px; display: block; }
 .sidebar-foot button { border: 0; background: none; margin-left: auto; }
 .avatar {
   width: 34px;
@@ -173,6 +173,7 @@
   color: #fff;
   font-weight: 700;
   flex: none;
+  object-fit: cover;
 }
 .indigo { background: var(--indigo); }
 .coral { background: var(--coral); }

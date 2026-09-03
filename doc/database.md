@@ -98,9 +98,15 @@ created_at timestamptz not null default now()
 | --- | --- | --- |
 | group_id | uuid FK→groups | — |
 | user_id | uuid FK→profiles | — |
-| role | text | `'owner'` \| `'member'`（既定 `'member'`） |
+| role | text | `'owner'` \| `'member'`（既定 `'member'`）。作成者の記録用。認可には使わない |
 
 PK は `(group_id, user_id)`。
+
+行が削除されると `on_group_member_left` トリガー（`delete_empty_group`, SECURITY DEFINER）が
+発火し、そのグループの残メンバーが 0 件なら `groups` 行を削除する（`shelf_shares` /
+`question_set_shares` / `study_sessions` などは cascade で消える）。owner 概念は UI に出さず、
+owner も自由に脱退できる。`pg_trigger_depth()` ガードで cascade 再入を防いでいる。
+参照: [`20260903120000_delete_empty_group.sql`](../supabase/migrations/20260903120000_delete_empty_group.sql)
 
 ### shelf_shares — 棚のグループ共有
 
@@ -216,7 +222,7 @@ $$;
 | shelves | 本人、または `shelf_shares` 経由で `is_group_member` かつ `visible = true` | 本人のみ |
 | question_sets | 本人、または `is_shelf_shared(shelf_id)`（棚が可視共有されていれば中身の問題集も見える）、または `question_set_shares` 経由で `is_group_member` | 本人のみ |
 | question_set_shares | `is_group_member` または `owns_question_set`（SECURITY DEFINER。再帰回避） | `owns_question_set` |
-| groups | `is_group_member(id)` または `created_by = auth.uid()` | 作成は誰でも可、更新・削除は `role = 'owner'` |
+| groups | `is_group_member(id)` または `created_by = auth.uid()` | 作成は誰でも可、更新は `role = 'owner'`、削除はメンバー全員（`groups_delete_member`）。空グループの掃除は `on_group_member_left` トリガーが担う |
 | group_members | `is_group_member(group_id)` | `join_group_by_code` 経由のみ insert、脱退は本人 |
 | shelf_shares | `is_group_member(group_id)` | insert/update/delete とも対象棚の所有者 |
 | study_sessions | `is_group_member(group_id)` | 作成はメンバー、更新・削除は作成者 |
@@ -531,6 +537,13 @@ Route Handler を置くのは以下のいずれかに該当する場合**のみ*
     `${members.length} MEMBERS`・招待コード・メンバー一覧は `listGroupMembers` から。
     グループ未所属時は空状態、グループ読み込み中は専用メッセージを出す。
     「グループを抜ける」ボタンを追加（`leaveGroup`）。
+  - **空グループの自動削除**（[`20260903120000_delete_empty_group.sql`](../supabase/migrations/20260903120000_delete_empty_group.sql)）:
+    `group_members` の AFTER DELETE トリガー `on_group_member_left` / `delete_empty_group`
+    （SECURITY DEFINER）が、残メンバー 0 件のときに `groups` 行を削除する。owner 概念は
+    UI に出さず、owner も自由に脱退できる。`GroupView` は最後の1人（`members.length === 1`）
+    のとき警告文と強い確認ダイアログを出し、脱退前に今後の勉強会を
+    `unsyncSessionFromCalendar` で片付ける。`groups_delete_owner` は `groups_delete_member`
+    （メンバー全員可）へ緩めた。
 - **完了条件（達成）**: 別アカウントが招待コードで参加すると、両者のメンバー一覧に出る。
 
 ### 7. 共有（shelf_shares / question_set_shares） ✅ 完了
@@ -588,16 +601,32 @@ Route Handler を置くのは以下のいずれかに該当する場合**のみ*
 - **完了条件（達成）**: 予定作成 → リロード後も残る → 「カレンダーへ」→ 参加者の Google カレンダーに
   実際に入る → 作成者の「キャンセル」で Google 側・`study_sessions` 行とも消える。
 
-### 9. アカウント画面
+### 9. アカウント画面 ✅ 完了
 
 - **対象**: [`app/components/views/AccountView.tsx`](../app/components/views/AccountView.tsx)、
-  [`app/components/Sidebar.tsx`](../app/components/Sidebar.tsx)
-- **やること**:
-  - `ゆうた` / `工学部 情報工学科` / `yuta@example.jp` / `未接続` を
-    `supabase.auth.getUser()` + `profiles` + `google_credentials` 行の有無から
-  - 「ログアウト」ボタンを `notify()` スタブから既存の `signOut()`（`/logout` 遷移）へ
-  - サイドバーのアバター・氏名も同様に実データ化
-- **完了条件**: 表示名・メール・カレンダー連携状態が実アカウントを反映する。
+  [`app/components/views/ProfileEditView.tsx`](../app/components/views/ProfileEditView.tsx)、
+  [`app/components/Sidebar.tsx`](../app/components/Sidebar.tsx)、[`app/page.tsx`](../app/page.tsx)、
+  `lib/data/profiles.ts`、`lib/api/account.ts`、`app/api/account/google-status/route.ts`
+- **実装内容**:
+  - `学部` / `学科` は `profiles` に列が無いため UI から削除（`Profile` 型を廃止し
+    `AccountProfile`（`id / displayName / avatarUrl / email`）に統一）。
+  - `lib/data/profiles.ts` の `getMyProfile` が `supabase.auth.getUser()` ＋
+    `profiles` 行（無ければ Google の `user_metadata` にフォールバック）から
+    表示名・アイコン URL・メールを組み立てる。`updateDisplayName` で表示名のみ更新可能
+    （RLS `profiles_update_own`）。
+  - アイコンは `profiles.avatar_url`（Google プロフィール画像 URL）を新規 `ProfileIcon`
+    コンポーネント（`app/components/ui.tsx`）で `<img>` 表示。URL が無い場合のみ
+    従来の頭文字タイルにフォールバック。アップロード機能・`avatars` バケットは対象外。
+  - Google カレンダー連携状態は `google_credentials`（RLS 全拒否）を読む必要があるため
+    `GET /api/account/google-status`（service-role）を新設し、`lib/api/account.ts` の
+    `fetchGoogleStatus()` から叩く。
+  - 「ログアウト」ボタンは偽の `LogoutView`（削除済み）ではなく `<Link href="/logout">`
+    で本物の `signOut()` 画面へ遷移。
+  - `page.tsx` に `loadProfile` / `saveProfile`（`shelves` 等と同じ `LoadState` パターン）を
+    追加し、既存の `getUser()` だけの `userId` 取得 effect を統合。サイドバーは
+    `profile: AccountProfile | null` を丸ごと受け取る。
+- **完了条件（達成）**: 表示名・メールアドレス・アイコンが実際の Google アカウントを反映し、
+  表示名の変更はリロード後も残る。カレンダー連携状態は `google_credentials` 行の有無と一致する。
 
 ## 今回のスコープ外（将来）
 

@@ -3,8 +3,8 @@
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 
-import type { GroupRow, Navigate, View } from "../types";
-import { Icon, type IconName } from "./ui";
+import type { AccountProfile, GroupRow, Navigate, View } from "../types";
+import { Icon, ProfileIcon, type IconName } from "./ui";
 
 type Props = {
   view: View;
@@ -14,11 +14,10 @@ type Props = {
   selectedGroupId: string | null;
   onSelectGroup: (id: string) => void;
   onCreateGroup: () => void;
-  displayName: string;
-  profileLabel: string;
+  profile: AccountProfile | null;
 };
 
-export function Sidebar({ view, navigate, openShelves, groups, selectedGroupId, onSelectGroup, onCreateGroup, displayName, profileLabel }: Props) {
+export function Sidebar({ view, navigate, openShelves, groups, selectedGroupId, onSelectGroup, onCreateGroup, profile }: Props) {
   const [switcherOpen, setSwitcherOpen] = useState(false);
   const switcherRef = useRef<HTMLDivElement>(null);
   const selectedGroup = groups.find((g) => g.id === selectedGroupId) ?? null;
@@ -117,10 +116,10 @@ export function Sidebar({ view, navigate, openShelves, groups, selectedGroupId, 
         </button>
       </nav>
       <div className="sidebar-foot">
-        <span className="avatar indigo">{displayName.charAt(0) || "?"}</span>
+        <ProfileIcon name={profile?.displayName ?? "?"} url={profile?.avatarUrl} />
         <span>
-          <b>{displayName}</b>
-          <small>{profileLabel}</small>
+          <b>{profile?.displayName ?? "読み込み中…"}</b>
+          <small>{profile?.email ?? ""}</small>
         </span>
         <Link href="/logout" aria-label="ログアウト" title="ログアウト">
           <Icon name="more" />
