@@ -375,6 +375,21 @@ FE 調査で判明した、実装時に踏むと詰まる箇所。
    （招待コードのように他メンバーが操作できる想定ではない）。`GroupView` は
    `shelf.owner_id === userId` のときだけ非表示トグルを表示する。
 
+10. **`groups_select_member` の `created_by` 抜け道により「幽霊グループ」が見えることがある**
+    → **解消済み**（2026-09-03）。`groups_select_member` は
+    `is_group_member(id) or created_by = auth.uid()`（落とし穴 1 参照）なので、
+    グループ作成者が自分の `group_members` 行を削除して脱退しても、`groups` 自体は
+    `created_by` 経由で見え続ける。`group_members` / `shelf_shares` は `is_group_member` のみで
+    絞られるため、その作成者にはグループ名だけ見えてメンバーも共有棚も空、という状態になりうる。
+    実際に本番で発生: グループ作成直後に作成者が脱退 → 当時 `delete_empty_group` トリガー未導入
+    だったため空のまま残留 → 別ユーザーが招待コードで参加し棚を共有しても作成者側には何も見えない
+    という不具合になった。[`lib/data/groups.ts`](../lib/data/groups.ts) の `listMyGroups` は
+    `groups` を直接 select せず、`group_members` から自分の `group_id` を集めてから
+    `groups.select("*").in("id", ids)` する方式に変更し、実際に所属していないグループは
+    一覧に出さないようにした（メンバーでなければ `GroupView` の「グループに参加していません」に
+    フォールバックし、招待コードで参加し直せる）。RLS 自体（`created_by` 抜け道）はグループ作成の
+    `insert().select()` を通すために必要なので変更しない。
+
 ## 開発方針
 
 BE / FE は分けず、一貫して開発する。以下は残す技術判断。

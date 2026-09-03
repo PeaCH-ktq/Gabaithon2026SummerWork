@@ -165,6 +165,13 @@ export default function Home() {
     void Promise.resolve().then(() => loadSessions());
   }, [loadSessions]);
 
+  // グループ画面を開くたびに棚を取り直す。他人が共有した棚は初回マウント時の
+  // 読み込みだけでは反映されないため（開きっぱなしのタブに他人の共有が届かない）。
+  useEffect(() => {
+    if (view !== "group") return;
+    void Promise.resolve().then(() => loadShelves());
+  }, [view, selectedGroupId, loadShelves]);
+
   const loadMaterials = useCallback(
     async (shelfId: string) => {
       setMaterialsState("loading");

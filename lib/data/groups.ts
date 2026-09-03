@@ -6,10 +6,30 @@ type DB = SupabaseClient<Database>;
 type GroupRow = Database["public"]["Tables"]["groups"]["Row"];
 type GroupMemberRow = Database["public"]["Tables"]["group_members"]["Row"];
 
-/** 自分が所属するグループ（RLS: is_group_member）。 */
+/**
+ * 自分が所属するグループ。
+ *
+ * `groups` を直接 select しない。`groups_select_member` ポリシーには
+ * `created_by = auth.uid()` という抜け道があり、作成者が後から脱退しても
+ * グループ自体は見え続けてしまう（中身だけ空になる「幽霊グループ」）ため、
+ * `group_members` に実際に自分の行があるグループだけに絞る。
+ */
 export async function listMyGroups(supabase: DB): Promise<GroupRow[]> {
+  const { data: auth } = await supabase.auth.getUser();
+  if (!auth.user) throw new Error("ログインが必要です。");
+
+  const memberships = unwrap(
+    await supabase.from("group_members").select("group_id").eq("user_id", auth.user.id),
+    "グループの取得",
+  );
+  if (memberships.length === 0) return [];
+
   return unwrap(
-    await supabase.from("groups").select("*").order("created_at", { ascending: true }),
+    await supabase
+      .from("groups")
+      .select("*")
+      .in("id", memberships.map((m) => m.group_id))
+      .order("created_at", { ascending: true }),
     "グループの取得",
   );
 }
