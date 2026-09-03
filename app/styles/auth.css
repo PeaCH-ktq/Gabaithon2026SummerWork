@@ -19,25 +19,18 @@
   padding: 36px 30px 28px;
   text-align: center;
 }
+/* ログイン・ログアウト画面共通：Tan-E_icon.svg をそのまま表示 */
 .auth-mark {
-  width: 44px;
-  height: 44px;
+  display: block;
   margin: 0 auto 18px;
-  border-radius: 13px;
-  background: var(--indigo);
-  display: grid;
-  place-items: center;
-  transform: rotate(-5deg);
-  box-shadow: 0 8px 20px #5661bd40;
-}
-.auth-mark span {
-  width: 16px;
-  height: 20px;
-  border: 2px solid #fff;
-  border-radius: 2px;
+  width: 120px;
+  height: auto;
 }
 .auth-title {
-  font: 600 20px/1.4 var(--font-display),var(--font-jp),sans-serif;
+  font:
+    600 20px/1.4 var(--font-display),
+    var(--font-jp),
+    sans-serif;
   color: var(--ink);
 }
 .auth-lead {
@@ -68,10 +61,18 @@
   font-weight: 600;
   color: var(--ink);
   text-decoration: none;
-  transition: background .15s ease, border-color .15s ease;
+  transition:
+    background 0.15s ease,
+    border-color 0.15s ease;
 }
-.auth-google:hover { background: var(--soft); border-color: var(--indigo); }
-.auth-google:disabled { opacity: .6; cursor: default; }
+.auth-google:hover {
+  background: var(--soft);
+  border-color: var(--indigo);
+}
+.auth-google:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
 .auth-note {
   margin-top: 18px;
   color: var(--muted);
