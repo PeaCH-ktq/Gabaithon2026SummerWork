@@ -58,7 +58,6 @@ export function Sidebar({
         </span>
         <span className="brand-copy">
           <b>Tan-E</b>
-          <small>STUDY COMPANION</small>
         </span>
       </button>
       <nav aria-label="メインナビゲーション">
