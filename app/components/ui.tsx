@@ -115,6 +115,14 @@ export function Icon({ name, size = 18 }: { name: IconName; size?: number }) {
   );
 }
 
+export function ProfileIcon({ name, url, className = "indigo" }: { name: string; url?: string | null; className?: string }) {
+  if (url) {
+    // eslint-disable-next-line @next/next/no-img-element
+    return <img className="avatar" src={url} alt="" referrerPolicy="no-referrer" />;
+  }
+  return <span className={`avatar ${className}`}>{name.charAt(0) || "?"}</span>;
+}
+
 export function Button({
   children,
   primary,

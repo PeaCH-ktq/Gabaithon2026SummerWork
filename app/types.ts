@@ -1,6 +1,6 @@
 import type { Database } from "@/lib/supabase/types";
 
-export type View = "home" | "course" | "quiz" | "tasks" | "group" | "account" | "profile-edit" | "logout";
+export type View = "home" | "course" | "quiz" | "tasks" | "group" | "account" | "profile-edit";
 export type Navigate = (view: View) => void;
 export type Notify = (message: string) => void;
 
@@ -12,10 +12,14 @@ export type Assignment = {
   color: string;
 };
 
-export type Profile = {
+/** `profiles` テーブルの行そのもの。 */
+export type ProfileRow = Database["public"]["Tables"]["profiles"]["Row"];
+
+/** アカウント画面向けの自分のプロフィール（`profiles` ＋ `auth.users.email`）。 */
+export type AccountProfile = {
+  id: string;
   displayName: string;
-  faculty: string;
-  department: string;
+  avatarUrl: string | null;
   email: string;
 };
 

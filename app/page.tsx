@@ -12,13 +12,12 @@ import { Sidebar } from "./components/Sidebar";
 import { Toast } from "./components/Toast";
 import { CourseView } from "./components/views/CourseView";
 import { AccountView } from "./components/views/AccountView";
-import { LogoutView } from "./components/views/LogoutView";
 import { ProfileEditView } from "./components/views/ProfileEditView";
 import { GroupView } from "./components/views/GroupView";
 import { HomeView } from "./components/views/HomeView";
 import { QuizView } from "./components/views/QuizView";
 import { TasksView } from "./components/views/TasksView";
-import type { Assignment, GroupRow, LoadState, MaterialRow, Profile, QuestionSetRow, Shelf, ShelfFormValues, StudySessionFormValues, StudySessionRow, View } from "./types";
+import type { AccountProfile, Assignment, GroupRow, LoadState, MaterialRow, QuestionSetRow, Shelf, ShelfFormValues, StudySessionFormValues, StudySessionRow, View } from "./types";
 import { createClient } from "@/lib/supabase/client";
 import { createShelf, listShelves, updateShelf } from "@/lib/data/shelves";
 import { listMaterialsByShelf, uploadMaterial } from "@/lib/data/materials";
@@ -26,6 +25,7 @@ import { listQuestionSetsByShelf } from "@/lib/data/questionSets";
 import { createGroup, joinGroupByCode, listMyGroups } from "@/lib/data/groups";
 import { shareShelf, unshareShelf } from "@/lib/data/shares";
 import { createStudySession, listUpcomingSessions } from "@/lib/data/studySessions";
+import { getMyProfile, updateDisplayName } from "@/lib/data/profiles";
 import { pickShelfColor } from "@/lib/format/schedule";
 import { deadlines } from "./demo-data";
 import type { QuestionSet } from "@/lib/gemini/schema";
@@ -62,12 +62,9 @@ export default function Home() {
   const [sessionsState, setSessionsState] = useState<LoadState>("loading");
   const [savingSession, setSavingSession] = useState(false);
   const [assignments, setAssignments] = useState<Assignment[]>(deadlines);
-  const [profile, setProfile] = useState<Profile>({
-    displayName: "ゆうた",
-    faculty: "工学部",
-    department: "情報工学科",
-    email: "yuta@example.jp",
-  });
+  const [profile, setProfile] = useState<AccountProfile | null>(null);
+  const [profileState, setProfileState] = useState<LoadState>("loading");
+  const [savingProfile, setSavingProfile] = useState(false);
   const [step, setStep] = useState(1);
   const [toast, setToast] = useState("");
   const [activeTab, setActiveTab] = useState<"material" | "quiz">("material");
@@ -103,11 +100,24 @@ export default function Home() {
     void Promise.resolve().then(() => loadShelves());
   }, [loadShelves]);
 
-  useEffect(() => {
-    void supabase.auth
-      .getUser()
-      .then(({ data }) => setUserId(data.user?.id ?? null));
+  const loadProfile = useCallback(async () => {
+    setProfileState("loading");
+    try {
+      const row = await getMyProfile(supabase);
+      setProfile(row);
+      setUserId(row.id);
+      setProfileState("ready");
+      return row;
+    } catch (err) {
+      console.error(err);
+      setProfileState("error");
+      return null;
+    }
   }, [supabase]);
+
+  useEffect(() => {
+    void Promise.resolve().then(() => loadProfile());
+  }, [loadProfile]);
 
   const loadGroups = useCallback(async () => {
     setGroupsState("loading");
@@ -310,6 +320,20 @@ export default function Home() {
     }
   }
 
+  async function saveProfile(displayName: string) {
+    setSavingProfile(true);
+    try {
+      await updateDisplayName(supabase, displayName);
+      await loadProfile();
+      navigate("account");
+      notify("プロフィールを更新しました");
+    } catch (err) {
+      notify(err instanceof Error ? err.message : "プロフィールの更新に失敗しました");
+    } finally {
+      setSavingProfile(false);
+    }
+  }
+
   async function saveSession(values: StudySessionFormValues) {
     if (!selectedGroupId) return;
     setSavingSession(true);
@@ -375,8 +399,7 @@ export default function Home() {
         selectedGroupId={selectedGroupId}
         onSelectGroup={setSelectedGroupId}
         onCreateGroup={() => setModal("group")}
-        displayName={profile.displayName}
-        profileLabel={`${profile.faculty} ${profile.department}`}
+        profile={profile}
       />
       <main className="main">
         {/* ホーム：今日の学習、講義棚、直近の締切。 */}
@@ -494,7 +517,8 @@ export default function Home() {
             onSessionsChanged={() => { void loadSessions(); }}
           />
         )}
-        {view === "logout" && <LogoutView navigate={navigate} />}
+        {view === "account" && <AccountView navigate={navigate} profile={profile} profileState={profileState} />}
+        {view === "profile-edit" && profile && <ProfileEditView navigate={navigate} profile={profile} saving={savingProfile} onSave={saveProfile} />}
       </main>
       {/* 資料と出題条件を選択する、2段階の問題作成モーダル。 */}
       {modal === "create" && selectedShelf && (

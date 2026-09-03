@@ -72,6 +72,7 @@ export function GroupView({ supabase, group, groupsState, userId, shelves, sessi
   }
 
   const sharedShelves = shelves.filter((shelf) => shelf.shares.some((s) => s.group_id === group.id));
+  const isLastMember = membersState === "ready" && members.length === 1;
 
   async function toggleVisible(shelf: Shelf, visible: boolean) {
     setTogglingShelfId(shelf.id);
@@ -87,10 +88,28 @@ export function GroupView({ supabase, group, groupsState, userId, shelves, sessi
 
   async function handleLeave() {
     if (leaving) return;
+    const confirmed = isLastMember
+      ? window.confirm(
+          `あなたが最後のメンバーです。脱退すると「${group!.name}」は削除され、共有中の棚の設定や今後の勉強会の予定もすべて消えます。`,
+        )
+      : window.confirm(`「${group!.name}」から脱退します。`);
+    if (!confirmed) return;
     setLeaving(true);
     try {
+      // 最後の1人が抜けるとグループが自動削除され、study_sessions も cascade で消える。
+      // Google カレンダー上の予定は残るため、脱退の前に（＝まだメンバーとして
+      // /api/calendar/events を呼べるうちに）今後の予定を取り消しておく。
+      if (isLastMember) {
+        for (const s of sessions) {
+          try {
+            await unsyncSessionFromCalendar(s.id);
+          } catch (err) {
+            console.error("[GroupView] カレンダー取り消し", err);
+          }
+        }
+      }
       await leaveGroup(supabase, group!.id);
-      notify("グループを抜けました");
+      notify(isLastMember ? "グループを削除しました" : "グループを抜けました");
       onLeft();
     } catch (err) {
       notify(err instanceof Error ? err.message : "グループの脱退に失敗しました");
@@ -142,8 +161,17 @@ export function GroupView({ supabase, group, groupsState, userId, shelves, sessi
           招待する
         </Button>
         <Button subtle onClick={() => void handleLeave()} disabled={leaving}>
-          {leaving ? "脱退中…" : "グループを抜ける"}
+          {leaving
+            ? "脱退中…"
+            : isLastMember
+              ? "グループを抜ける（削除されます）"
+              : "グループを抜ける"}
         </Button>
+        {isLastMember && (
+          <p className="muted">
+            あなたが最後のメンバーです。脱退するとこのグループは削除されます。
+          </p>
+        )}
       </header>
       {inviteOpen && (
         <section className="content-card invite-panel">
