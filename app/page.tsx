@@ -35,7 +35,7 @@ export default function Home() {
   // 現在の画面、モーダル、タブなど、UIの表示状態を管理する。
   const [view, setView] = useState<View>("home");
   const [modal, setModal] = useState<
-    "none" | "create" | "schedule" | "shelf" | "material" | "group" | "share"
+    "none" | "create" | "schedule" | "shelf" | "material" | "misc" | "group" | "share"
   >("none");
   const [userId, setUserId] = useState<string | null>(null);
   const [shelves, setShelves] = useState<Shelf[]>([]);
@@ -67,7 +67,7 @@ export default function Home() {
   const [savingProfile, setSavingProfile] = useState(false);
   const [step, setStep] = useState(1);
   const [toast, setToast] = useState("");
-  const [activeTab, setActiveTab] = useState<"material" | "quiz">("material");
+  const [activeTab, setActiveTab] = useState<"material" | "misc" | "quiz">("material");
   const [generating, setGenerating] = useState(false);
   const [selectedQuestionSetId, setSelectedQuestionSetId] = useState<
     string | null
@@ -405,6 +405,7 @@ export default function Home() {
         {/* ホーム：今日の学習、講義棚、直近の締切。 */}
         {view === "home" && (
           <HomeView
+            supabase={supabase}
             shelves={shelves}
             shelvesState={shelvesState}
             assignments={assignments}
@@ -416,6 +417,7 @@ export default function Home() {
             activeTab={activeTab}
             setActiveTab={setActiveTab}
             openMaterial={() => setModal("material")}
+            openMisc={() => setModal("misc")}
             openQuiz={openQuiz}
             // 編集対象の棚IDを同期してからモーダルを開く。
             // 「棚を追加」でselectedShelfIdがnullにリセットされた後でも、
@@ -438,6 +440,7 @@ export default function Home() {
         {/* 講義詳細：資料と作成済み問題集をタブで切り替える。 */}
         {view === "course" && selectedShelf && (
           <CourseView
+            supabase={supabase}
             shelf={selectedShelf}
             materials={courseMaterials[selectedShelf.id] ?? []}
             materialsState={materialsState}
@@ -448,6 +451,7 @@ export default function Home() {
             )}
             openShelves={openShelves}
             openMaterial={() => setModal("material")}
+            openMisc={() => setModal("misc")}
             openQuiz={openQuiz}
             // CourseViewのshelfはselectedShelfそのものであり、
             // 講義詳細表示中はすでに同期済みなので明示的に再指定しておく。
@@ -550,14 +554,17 @@ export default function Home() {
           onSave={saveShelf}
         />
       )}
-      {modal === "material" && selectedShelf && (
+      {(modal === "material" || modal === "misc") && selectedShelf && (
         <MaterialModal
+          kind={modal === "misc" ? "misc" : "lecture"}
           onClose={() => setModal("none")}
           onUpload={async (file) => {
             const material = await uploadMaterial(
               supabase,
               selectedShelf.id,
               file,
+              undefined,
+              modal === "misc" ? "misc" : "lecture",
             );
             await loadMaterials(selectedShelf.id);
             await loadShelves();

@@ -17,8 +17,9 @@ type ShelfUpdate = Database["public"]["Tables"]["shelves"]["Update"];
  * `supabase gen types` へ移行したら埋め込み集計に置き換えてよい。
  *
  * RLS 由来の仕様:
- * - `materials_all_own` により、他人から共有された棚の materialCount は必ず 0
- *   （講義資料は共有しない設計なので正しい）。
+ * - `materials_select` の `kind = 'lecture'` 分岐により、他人から共有された棚の
+ *   materialCount（講義資料）は必ず 0（講義資料は共有しない設計なので正しい）。
+ *   一方 miscCount（雑資料）は棚が共有されていれば非所有者にも実数が見える。
  * - `shelf_shares_select` は `is_group_member` 前提なので、sharedGroupIds には
  *   「自分が所属するグループへの共有」だけが載る。
  */
@@ -28,7 +29,7 @@ export async function listShelves(supabase: DB): Promise<Shelf[]> {
     "棚の取得",
   );
   const materials = unwrap(
-    await supabase.from("materials").select("shelf_id"),
+    await supabase.from("materials").select("shelf_id, kind"),
     "資料件数の取得",
   );
   const questionSets = unwrap(
@@ -40,7 +41,14 @@ export async function listShelves(supabase: DB): Promise<Shelf[]> {
     "共有情報の取得",
   );
 
-  const materialCount = countBy(materials, (r) => r.shelf_id);
+  const materialCount = countBy(
+    materials.filter((r) => r.kind === "lecture"),
+    (r) => r.shelf_id,
+  );
+  const miscCount = countBy(
+    materials.filter((r) => r.kind === "misc"),
+    (r) => r.shelf_id,
+  );
   const questionSetCount = countBy(questionSets, (r) => r.shelf_id);
   const sharesByShelf = new Map<string, ShelfShare[]>();
   for (const s of shares) {
@@ -54,6 +62,7 @@ export async function listShelves(supabase: DB): Promise<Shelf[]> {
     return {
       ...row,
       materialCount: materialCount.get(row.id) ?? 0,
+      miscCount: miscCount.get(row.id) ?? 0,
       questionSetCount: questionSetCount.get(row.id) ?? 0,
       shares: shelfShares,
       sharedGroupIds: shelfShares.map((s) => s.group_id),

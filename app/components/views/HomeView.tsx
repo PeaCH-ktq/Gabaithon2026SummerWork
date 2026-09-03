@@ -1,5 +1,7 @@
 import { useState } from "react";
 import type React from "react";
+import type { SupabaseClient } from "@supabase/supabase-js";
+import type { Database } from "@/lib/supabase/types";
 import type {
   Assignment,
   LoadState,
@@ -20,6 +22,7 @@ function truncateBookTitle(title: string): string {
 }
 
 type Props = {
+  supabase: SupabaseClient<Database>;
   shelves: Shelf[];
   shelvesState: LoadState;
   assignments: Assignment[];
@@ -31,9 +34,10 @@ type Props = {
   materialsState: LoadState;
   questionSetsByShelf: Record<string, QuestionSetRow[]>;
   questionSetsState: LoadState;
-  activeTab: "material" | "quiz";
-  setActiveTab: (tab: "material" | "quiz") => void;
+  activeTab: "material" | "misc" | "quiz";
+  setActiveTab: (tab: "material" | "misc" | "quiz") => void;
   openMaterial: () => void;
+  openMisc: () => void;
   openQuiz: (id: string) => void;
   // 編集対象の棚IDを受け取り、page.tsx側のselectedShelfIdをその棚に同期させる。
   editShelf: (id: string) => void;
@@ -42,6 +46,7 @@ type Props = {
 };
 
 export function HomeView({
+  supabase,
   shelves,
   shelvesState,
   assignments,
@@ -56,6 +61,7 @@ export function HomeView({
   activeTab,
   setActiveTab,
   openMaterial,
+  openMisc,
   openQuiz,
   editShelf,
   openShare,
@@ -230,6 +236,7 @@ export function HomeView({
             key={openedShelf.id}
           >
             <CourseView
+              supabase={supabase}
               shelf={openedShelf}
               materials={materialsByShelf[openedShelf.id] ?? []}
               materialsState={materialsState}
@@ -240,6 +247,7 @@ export function HomeView({
               )}
               openShelves={() => setOpenedShelfId(null)}
               openMaterial={openMaterial}
+              openMisc={openMisc}
               openQuiz={openQuiz}
               // 編集中の棚がpage.tsx側のselectedShelfIdと食い違わないよう、
               // 現在HomeViewで開いている棚のIDを明示的に渡す。

@@ -76,6 +76,7 @@ export interface Database {
           id: string;
           shelf_id: string;
           owner_id: string;
+          kind: "lecture" | "misc";
           storage_path: string;
           file_name: string;
           mime_type: string;
@@ -86,6 +87,7 @@ export interface Database {
           id?: string;
           shelf_id: string;
           owner_id: string;
+          kind?: "lecture" | "misc";
           storage_path: string;
           file_name: string;
           mime_type: string;

@@ -40,7 +40,7 @@ cp .env.example .env.local
 > `.env.local` は Git 管理外です。API キーはクライアントには一切渡らず、Route Handler（サーバー）内でのみ使用されます。
 
 ### 動作確認
-`npm run dev` 後、`http://localhost:3000/dev/generate` で問題生成 API を試せます。
+`npm run dev` 後、ログインしてホーム画面の棚から「問題をつくる」で問題生成を試せます。
 
 <br>
 <br>
@@ -111,8 +111,13 @@ AI をゴリゴリ活かしたい（無料枠だと Gemini API）。
 ### 生成フロー
 
 ```
-ブラウザ ──(FormData: file 1つ + 追加指示)──▶ POST /api/questions/generate
+ブラウザ ──(File 1つ)──▶ Supabase Storage（materials バケット）＋ materials 行
+   │  署名付きアップロード URL へ XHR で PUT（実測進捗つき）／サイズ・MIME をここで検証
+   ▼
+ブラウザ ──(FormData: materialId + 追加指示)──▶ POST /api/questions/generate
                                                   │  GEMINI_API_KEY はサーバーのみ
+                                                  ▼
+                        サーバーが Storage から資料を取得（size_bytes を再検証）
                                                   ▼
                                 Gemini Files API にアップロード → ACTIVE 待ち
                                                   ▼
@@ -125,7 +130,7 @@ AI をゴリゴリ活かしたい（無料枠だと Gemini API）。
 
 ### 入力
 
-- ファイルは **1つ**（PDF / テキスト / 画像）。それが講義資料か過去問かは Gemini が中身から判断する
+- ファイルは **1つ**（PDF / テキスト / 画像、最大 50MB）。それが講義資料か過去問かは Gemini が中身から判断する
   - 講義資料と判断 → 資料の内容から問題を生成
   - 過去問と判断 → 傾向・形式・難易度を分析し、そっくりな類似問題を生成
 - 問題数・難易度・出題形式は指定不要（資料の分量と内容から Gemini が自動決定。目安 5〜10問）
@@ -153,7 +158,9 @@ AI をゴリゴリ活かしたい（無料枠だと Gemini API）。
 ### 補足・制約
 
 - Files API のファイルは API キー単位・48 時間で自動失効。問題集や資料の恒久保存は Supabase 側で行う（別タスク）
-- 資料はブラウザ → 自前サーバー → Gemini と流れるため、Vercel デプロイ時はサーバーレス関数のボディ上限（約 4.5MB）が実質の上限（現状 4MB で制限）。大きい資料は将来ブラウザから Storage へ直接アップロードする設計に移行
+- 資料はブラウザから Supabase Storage へ直接アップロードするため、Vercel のサーバーレス関数ボディ上限（約 4.5MB）は無関係。実質の上限は Storage バケットの `file_size_limit`（`supabase/migrations/20260903130000_material_limits.sql` で 50MB）で、`lib/gemini/config.ts` の `MAX_MATERIAL_BYTES` と一致させる
+  - ページ数の多い PDF は Gemini のコンテキスト上限に当たることがあり、その場合は 413 で「ページ数が多すぎます」を返す
+  - サーバーは資料を丸ごとメモリに載せて Gemini へ中継するため、`maxDuration` は 300 秒（プランにより暗黙にクランプされることあり）
 - 著作権上、講義資料は各個人のみ閲覧（共有対象は生成された問題集など）
 
 ## ページ

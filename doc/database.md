@@ -11,8 +11,10 @@ TanE の永続化層は Supabase（Postgres + Auth + Storage）で構築する�
 - **問題集の保存**: 生成した `QuestionSet`（[`lib/gemini/schema.ts`](../lib/gemini/schema.ts)）を
   そのまま `question_sets.content jsonb` に保存する。PDF は保存せず、従来通り
   `components/QuestionPaper.tsx` をブラウザで `window.print()` して都度出力する。
-- **講義資料の著作権**: `materials`（講義資料・過去問）は所有者本人のみ閲覧可能。
-  グループへ共有できるのは生成された**問題集のみ**。
+- **講義資料の著作権**: `materials` の `kind = 'lecture'`（講義資料・過去問）は所有者本人のみ
+  閲覧可能。グループへ共有できるのは生成された**問題集**と、`kind = 'misc'`（雑資料。著作権に
+  関係のない資料）のみ。雑資料の共有単位は棚の共有（`shelf_shares` / `is_shelf_shared`）に
+  連動する。個別の資料単位で共有先を選ぶ機能はない。
 - **カレンダー連携**: Google OAuth で実際にユーザーの Google カレンダーへイベントを書き込む
   （リンク生成だけではない）。
 - **認証**: Supabase Auth の Google ログインを唯一の認証手段とする。
@@ -49,18 +51,28 @@ created_at timestamptz not null default now()
 | day_of_week | smallint | 曜日（0=日〜6=土） |
 | period | smallint | 時限 |
 
-### materials — 講義資料・過去問
+### materials — 講義資料・過去問・雑資料
 
-**所有者本人のみ閲覧可能**（共有しない）。
+`kind = 'lecture'`（既定）は**所有者本人のみ閲覧可能**（共有しない）。
+`kind = 'misc'`（雑資料。著作権に関係のない資料）は本人に加え、棚が共有されている
+グループのメンバーも閲覧できる（`is_shelf_shared(shelf_id)`）。書き込み（追加・更新・削除）は
+どちらの `kind` でも所有者のみ。
 
 | カラム | 型 | 説明 |
 | --- | --- | --- |
 | shelf_id | uuid FK→shelves | 所属する棚 |
 | owner_id | uuid FK→profiles | 所有者 |
-| storage_path | text | Storage 上のパス |
+| kind | text | `'lecture'`（既定）\| `'misc'` |
+| storage_path | text | Storage 上のパス（unique） |
 | file_name | text | 元ファイル名 |
 | mime_type | text | MIME タイプ |
 | size_bytes | bigint | サイズ |
+
+Storage（バケット `materials`）は書き込みが引き続き所有者フォルダ限定
+（`materials_storage_own`）。読み取りのみ、`is_shared_misc_material(name)`
+（オブジェクト名 → `materials` 行を逆引きし、`kind='misc'` かつ `is_shelf_shared` を満たすか判定する
+SECURITY DEFINER 関数）で非所有者にも許可する。
+参照: [`20260903140000_misc_materials.sql`](../supabase/migrations/20260903140000_misc_materials.sql)
 
 ### question_sets — 生成された問題集
 
@@ -243,12 +255,20 @@ $$;
 - パス規則: `{user_id}/{material_id}/{file_name}`。
 - Storage ポリシー: `(storage.foldername(name))[1] = auth.uid()::text` の本人のみ
   （`materials_storage_own`、[`0002_rls.sql`](../supabase/migrations/0002_rls.sql) で定義済み）。
-- **アップロードはブラウザから anon キー＋RLS で直接** Storage へ行う（署名付き URL は不要）。
+- **アップロードはブラウザから直接** Storage へ行う（自前サーバーを経由しない＝Vercel のボディ上限と無関係）。
   クライアントで `crypto.randomUUID()` で `material_id` を採番し、パスとして使用。
-  アップロード完了後に `materials` テーブルへ行を insert する。
-  署名付き URL 発行エンドポイントは不要であり、Vercel のボディ上限も回避できる。
+  進捗（実測 %）を出すため `createSignedUploadUrl` で発行した URL へ XHR で PUT する
+  （`lib/data/uploadWithProgress.ts`）。署名付き URL の発行自体はユーザーセッション経由なので
+  `materials_storage_own` ポリシーがそのまま効く。アップロード完了後に `materials` へ行を insert し、
+  insert 失敗時はアップロード済みオブジェクトを `.remove()` でロールバックする。
+- バケットに `file_size_limit`（50MB）と `allowed_mime_types`（pdf / text/plain / text/markdown /
+  png / jpeg / webp）を設定済み
+  （[`20260903130000_material_limits.sql`](../supabase/migrations/20260903130000_material_limits.sql)）。
+  RLS はサイズ・形式を検査できないため、クライアント検証をすり抜けた場合の最終防衛線。
+  この値は `lib/gemini/config.ts` の `MAX_MATERIAL_BYTES` / `ALLOWED_MATERIAL_MIME_TYPES` と一致させる。
 - 問題生成 API はファイル本体ではなく `materialId` を受け取り、サーバー側で Storage から
-  ダウンロードして Gemini に渡す形に変更する（詳細はタスク「問題生成 API を `materialId` 受け取りに変更」参照）。
+  ダウンロードして Gemini に渡す（実装済み）。`materials.size_bytes` に対して `MAX_MATERIAL_BYTES` を
+  再検証し、超過時は 413 を返す。
 
 ## 必要な環境変数
 
@@ -281,7 +301,7 @@ Google ログイン時、Calendar への書き込み権限（`calendar.events` �
   RLS 前提）、[`lib/supabase/admin.ts`](../lib/supabase/admin.ts)（service-role 用）、
   [`lib/supabase/types.ts`](../lib/supabase/types.ts)（暫定の DB 型定義）。
 - [`proxy.ts`](../proxy.ts)（Next.js 16 で `middleware.ts` から改名されたセッション更新用ファイル）
-  を実装し、`npm run dev` で `/` と `/dev/generate` が正常応答することを確認済み。
+  を実装し、`npm run dev` で `/` が正常応答することを確認済み。
 - `.env.local` に `NEXT_PUBLIC_SUPABASE_URL` / `NEXT_PUBLIC_SUPABASE_ANON_KEY` /
   `SUPABASE_SERVICE_ROLE_KEY` を設定済み。
 - **Google ログイン実装は完了**（コード側）:
@@ -338,8 +358,10 @@ FE 調査で判明した、実装時に踏むと詰まる箇所。
    `formatSchedule(day_of_week, period)` で組み立てる（逆パーサは作らない。入力は `<select>`）。
 
 7. **共有された棚の件数表示に注意**（`lib/data/shelves.ts:listShelves`）
-   `materials_all_own` により、他人から共有された棚の `materialCount` は必ず 0 になる
-   （講義資料は共有しない設計なので正しい）。`shares`（`sharedGroupIds` はここから導出）には
+   `materials_select` の `kind = 'lecture'` 分岐により、他人から共有された棚の
+   `materialCount`（講義資料の件数）は必ず 0 になる（講義資料は共有しない設計なので正しい）。
+   一方 `miscCount`（雑資料の件数）は `kind = 'misc'` かつ `is_shelf_shared` を満たせば
+   非所有者でも実数が見える。`shares`（`sharedGroupIds` はここから導出）には
    `shelf_shares_select`（`is_group_member`）の都合で「自分が所属するグループへの共有」だけが載る。
 
 8. **`shelf_shares` に UPDATE ポリシーが無かった** ~~→ 解消済み~~。

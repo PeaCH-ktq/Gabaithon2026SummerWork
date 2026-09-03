@@ -73,6 +73,19 @@ export class GeminiUnavailableError extends Error {
   }
 }
 
+/** 資料がモデルのコンテキスト上限を超えた場合の、利用者向けエラー。 */
+export class GeminiContextExceededError extends Error {
+  constructor() {
+    super("資料のページ数が多すぎて処理できません。範囲を絞った資料でお試しください。");
+    this.name = "GeminiContextExceededError";
+  }
+}
+
+function isContextExceeded(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err);
+  return /token count|context length|exceeds the maximum|too large|input is too long/i.test(msg);
+}
+
 function isRateLimit(err: unknown): boolean {
   const msg = err instanceof Error ? err.message : String(err);
   return /\b429\b|RESOURCE_EXHAUSTED|rate limit|quota/i.test(msg);
@@ -104,6 +117,7 @@ async function generateWithRetry(
         },
       });
     } catch (err) {
+      if (isContextExceeded(err)) throw new GeminiContextExceededError();
       if (isRateLimit(err)) throw new GeminiRateLimitError();
       if (!isUnavailable(err)) throw err;
       if (attempt === GENERATION_RETRY.maxAttempts - 1) throw err;

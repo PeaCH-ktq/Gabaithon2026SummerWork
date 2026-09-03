@@ -4,11 +4,12 @@ import { useRef, useState } from "react";
 import { Button, Icon } from "../ui";
 
 type Props = {
+  kind?: "lecture" | "misc";
   onClose: () => void;
   onUpload: (file: File) => Promise<void>;
 };
 
-export function MaterialModal({ onClose, onUpload }: Props) {
+export function MaterialModal({ kind = "lecture", onClose, onUpload }: Props) {
   const input = useRef<HTMLInputElement>(null);
   const [file, setFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
@@ -33,8 +34,12 @@ export function MaterialModal({ onClose, onUpload }: Props) {
           <Icon name="close" />
         </button>
         <p className="eyebrow">NEW MATERIAL</p>
-        <h2>講義資料を追加</h2>
-        <p>選択した資料は自分だけに表示されます。</p>
+        <h2>{kind === "misc" ? "雑資料を追加" : "講義資料を追加"}</h2>
+        <p>
+          {kind === "misc"
+            ? "棚を共有しているグループのメンバーも閲覧できます。"
+            : "選択した資料は自分だけに表示されます。"}
+        </p>
         <button className="upload-dropzone" onClick={() => input.current?.click()} disabled={uploading}>
           <Icon name="upload" />
           <b>{file?.name ?? "ファイルを選択"}</b>

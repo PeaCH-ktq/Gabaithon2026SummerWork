@@ -34,6 +34,7 @@ export type ShelfShare = { group_id: string; visible: boolean };
  */
 export type Shelf = ShelfRow & {
   materialCount: number;
+  miscCount: number;
   questionSetCount: number;
   shares: ShelfShare[];
   /** @deprecated `shares.map(s => s.group_id)` を使う。 */

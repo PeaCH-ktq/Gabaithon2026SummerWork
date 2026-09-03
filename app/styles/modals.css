@@ -47,12 +47,14 @@
   flex: 1;
 }
 .modal-steps span.active { background: var(--indigo); }
+/* 出題元（講義資料／雑資料）を切り替えるタブ。course.css の .tabs を流用しつつ間隔だけ調整。 */
+.modal .tabs { margin-top: 20px; }
 /* 出題元の教材をチェックボックス形式で選択する一覧。 */
 .selection-list {
   border: 1px solid var(--line);
   border-radius: 12px;
   overflow: hidden;
-  margin-top: 20px;
+  margin-top: 12px;
 }
 .selection-list label,.reference-past {
   display: flex;
@@ -132,6 +134,12 @@
   height: 100%;
   background: var(--indigo);
   animation: load 1.3s ease-in-out infinite;
+}
+/* アップロード中は実測進捗を確定バーで表示する（不定形アニメーションは使わない）。 */
+.loading-bar.determinate span {
+  width: 0;
+  animation: none;
+  transition: width 0.2s ease-out;
 }
 .small-modal { width: min(480px,100%); }
 /* 勉強会作成モーダルで使うラベル付き入力欄。 */

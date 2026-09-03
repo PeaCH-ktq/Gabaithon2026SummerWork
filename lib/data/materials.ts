@@ -5,10 +5,13 @@ import {
   MAX_MATERIAL_BYTES,
 } from "@/lib/gemini/config";
 import { unwrap } from "./utils";
+import { putWithProgress } from "./uploadWithProgress";
 
 type DB = SupabaseClient<Database>;
 type MaterialRow = Database["public"]["Tables"]["materials"]["Row"];
 type MaterialInsert = Database["public"]["Tables"]["materials"]["Insert"];
+
+export type MaterialKind = MaterialRow["kind"];
 
 const ALLOWED_MIME: readonly string[] = ALLOWED_MATERIAL_MIME_TYPES;
 
@@ -76,11 +79,15 @@ export async function createMaterial(
  * パス規則: `{user_id}/{material_id}/{file_name}`（`0002_rls.sql` の
  * `materials_storage_own` ポリシー前提）。行 insert に失敗した場合は
  * アップロード済みファイルを削除し、孤児を残さない。
+ *
+ * `onProgress` を渡すと、アップロードの実測進捗（0〜1）が通知される。
  */
 export async function uploadMaterial(
   supabase: DB,
   shelfId: string,
   file: File,
+  onProgress?: (ratio: number) => void,
+  kind: MaterialKind = "lecture",
 ): Promise<MaterialRow> {
   if (file.size === 0) throw new Error("ファイルが空です。");
   if (file.size > MAX_MATERIAL_BYTES) {
@@ -97,18 +104,28 @@ export async function uploadMaterial(
   const id = crypto.randomUUID();
   const storagePath = `${auth.user.id}/${id}/${sanitizeForStorageKey(file.name)}`;
 
-  const { error: uploadError } = await supabase.storage
+  // 進捗を取るため、署名付きアップロード URL を発行して XHR で PUT する。
+  // 発行はユーザーセッション経由なので `materials_storage_own` ポリシーが効く。
+  const { data: signed, error: signError } = await supabase.storage
     .from("materials")
-    .upload(storagePath, file, { contentType: mimeType, upsert: false });
-  if (uploadError) {
-    console.error("[data] 資料のアップロード", uploadError);
-    throw new Error("資料のアップロードに失敗しました。");
+    .createSignedUploadUrl(storagePath);
+  if (signError || !signed) {
+    console.error("[data] 署名付きアップロードURLの発行", signError);
+    throw new Error("資料のアップロード準備に失敗しました。");
+  }
+
+  try {
+    await putWithProgress(signed.signedUrl, file, mimeType, onProgress);
+  } catch (err) {
+    console.error("[data] 資料のアップロード", err);
+    throw err instanceof Error ? err : new Error("資料のアップロードに失敗しました。");
   }
 
   try {
     return await createMaterial(supabase, {
       id,
       shelf_id: shelfId,
+      kind,
       storage_path: storagePath,
       file_name: file.name,
       mime_type: mimeType,
@@ -118,6 +135,21 @@ export async function uploadMaterial(
     await supabase.storage.from("materials").remove([storagePath]);
     throw err;
   }
+}
+
+/** 資料を開くための一時 URL（60秒）。雑資料は共有先のメンバーも取得できる。 */
+export async function createMaterialSignedUrl(
+  supabase: DB,
+  storagePath: string,
+): Promise<string> {
+  const { data, error } = await supabase.storage
+    .from("materials")
+    .createSignedUrl(storagePath, 60);
+  if (error || !data) {
+    console.error("[data] 資料URLの発行", error);
+    throw new Error("資料を開けませんでした。");
+  }
+  return data.signedUrl;
 }
 
 export async function deleteMaterial(supabase: DB, id: string): Promise<void> {

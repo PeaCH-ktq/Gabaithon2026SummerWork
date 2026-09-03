@@ -1,5 +1,6 @@
-import { ALLOWED_MATERIAL_MIME_TYPES } from "@/lib/gemini/config";
+import { ALLOWED_MATERIAL_MIME_TYPES, MAX_MATERIAL_BYTES } from "@/lib/gemini/config";
 import {
+  GeminiContextExceededError,
   GeminiRateLimitError,
   GeminiUnavailableError,
   generateQuestions,
@@ -12,8 +13,10 @@ import type { Database } from "@/lib/supabase/types";
 
 // Gemini SDK + ファイル処理のため Node ランタイムを使う。
 export const runtime = "nodejs";
-// アップロード〜生成で時間がかかるため延長（対応プラットフォームのみ有効）。
-export const maxDuration = 60;
+// Storage からの取得 → Gemini へのアップロード → ACTIVE 待ち → 生成、と
+// 段階が多く、大きい資料では時間がかかるため延長する。実際の上限はプラン
+// （Fluid Compute の有無）によって暗黙にクランプされることがある。
+export const maxDuration = 300;
 
 const ALLOWED_MIME: readonly string[] = ALLOWED_MATERIAL_MIME_TYPES;
 
@@ -22,6 +25,7 @@ type StoredMaterial = {
   storage_path: string;
   file_name: string;
   mime_type: string;
+  size_bytes: number;
 };
 
 function bad(message: string, status = 400) {
@@ -34,12 +38,18 @@ async function materialFromDatabase(
 ) {
   const { data, error: rowError } = await supabase
     .from("materials")
-    .select("id, shelf_id, storage_path, file_name, mime_type")
+    .select("id, shelf_id, storage_path, file_name, mime_type, size_bytes")
     .eq("id", materialId)
     .single();
   if (rowError || !data) return { error: bad("指定された資料が見つかりません。", 404) } as const;
   const row = data as unknown as StoredMaterial;
   if (!ALLOWED_MIME.includes(row.mime_type)) return { error: bad("指定された資料のファイル形式は未対応です。") } as const;
+  if (row.size_bytes > MAX_MATERIAL_BYTES) {
+    return { error: bad(
+      `資料が大きすぎます（上限 ${Math.floor(MAX_MATERIAL_BYTES / 1024 / 1024)}MB）。`,
+      413,
+    ) } as const;
+  }
 
   const { data: blob, error: downloadError } = await supabase.storage.from("materials").download(row.storage_path);
   if (downloadError || !blob) {
@@ -62,6 +72,7 @@ export async function POST(request: Request) {
 
   const materialId = String(form.get("materialId") ?? "").trim();
   if (!materialId) return bad("DBの資料を選んでください。");
+  const requestedShelfId = String(form.get("shelfId") ?? "").trim() || undefined;
 
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
@@ -69,7 +80,21 @@ export async function POST(request: Request) {
 
   const result = await materialFromDatabase(supabase, materialId);
   if ("error" in result) return result.error;
-  const { material, shelfId } = result;
+  const { material } = result;
+
+  // 資料が共有された雑資料（他人の棚に紐づく）の場合、生成した問題集を
+  // 資料側の棚ではなく自分の棚に保存する。指定された棚を自分が所有していれば
+  // それを使い、そうでなければ資料の棚にフォールバックする。
+  let shelfId = result.shelfId;
+  if (requestedShelfId) {
+    const { data: ownedShelf } = await supabase
+      .from("shelves")
+      .select("id")
+      .eq("id", requestedShelfId)
+      .eq("owner_id", user.id)
+      .maybeSingle();
+    if (ownedShelf) shelfId = ownedShelf.id;
+  }
 
   const extraInstruction = String(form.get("extraInstruction") ?? "").trim() || undefined;
   if (extraInstruction && extraInstruction.length > 1000) return bad("追加の指示は1000文字以内で入力してください。");
@@ -78,6 +103,9 @@ export async function POST(request: Request) {
   try {
     questionSet = await generateQuestions(material, { extraInstruction });
   } catch (e) {
+    if (e instanceof GeminiContextExceededError) {
+      return bad(e.message, 413);
+    }
     if (e instanceof GeminiRateLimitError) {
       return bad(e.message, 429);
     }

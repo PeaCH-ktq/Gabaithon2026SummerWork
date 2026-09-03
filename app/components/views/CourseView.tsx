@@ -7,11 +7,15 @@ import type {
   Shelf,
 } from "../../types";
 import { formatSchedule } from "@/lib/format/schedule";
+import { createMaterialSignedUrl } from "@/lib/data/materials";
 import { Button, Icon } from "../ui";
+import type { SupabaseClient } from "@supabase/supabase-js";
+import type { Database } from "@/lib/supabase/types";
 
 type Props = {
-  activeTab: "material" | "quiz";
-  setActiveTab: (tab: "material" | "quiz") => void;
+  supabase: SupabaseClient<Database>;
+  activeTab: "material" | "misc" | "quiz";
+  setActiveTab: (tab: "material" | "misc" | "quiz") => void;
   navigate: Navigate;
   startCreate: () => void;
   shelf: Shelf;
@@ -20,6 +24,7 @@ type Props = {
   questionSets: QuestionSetRow[];
   questionSetsState: LoadState;
   openMaterial: () => void;
+  openMisc: () => void;
   openQuiz: (id: string) => void;
   editCourse: () => void;
   openShare: () => void;
@@ -34,6 +39,7 @@ const DATE_FMT = new Intl.DateTimeFormat("ja-JP", {
 });
 
 export function CourseView({
+  supabase,
   activeTab,
   setActiveTab,
   navigate,
@@ -44,6 +50,7 @@ export function CourseView({
   questionSets,
   questionSetsState,
   openMaterial,
+  openMisc,
   openQuiz,
   editCourse,
   openShare,
@@ -51,6 +58,17 @@ export function CourseView({
   openShelves,
   isOwner,
 }: Props) {
+  const lectureMaterials = materials.filter((m) => m.kind === "lecture");
+  const miscMaterials = materials.filter((m) => m.kind === "misc");
+
+  async function openMaterialFile(material: MaterialRow) {
+    try {
+      const url = await createMaterialSignedUrl(supabase, material.storage_path);
+      window.open(url, "_blank", "noopener,noreferrer");
+    } catch (err) {
+      console.error(err);
+    }
+  }
   return (
     <>
       <header className="course-head">
@@ -76,7 +94,7 @@ export function CourseView({
           <b>講義資料はあなただけに表示されます</b>
           <p>
             {isOwner
-              ? "グループに共有されるのは、共有を許可した棚の問題集だけです。"
+              ? "グループに共有されるのは、共有を許可した棚の問題集と雑資料だけです。"
               : "この棚はグループに共有されています。講義資料は所有者だけが閲覧できます。"}
           </p>
         </div>
@@ -121,13 +139,19 @@ export function CourseView({
           講義資料 <span>{shelf.materialCount}</span>
         </button>
         <button
+          className={activeTab === "misc" ? "active" : ""}
+          onClick={() => setActiveTab("misc")}
+        >
+          雑資料 <span>{shelf.miscCount}</span>
+        </button>
+        <button
           className={activeTab === "quiz" ? "active" : ""}
           onClick={() => setActiveTab("quiz")}
         >
           問題集 <span>{shelf.questionSetCount}</span>
         </button>
       </div>
-      {activeTab === "material" ? (
+      {activeTab === "material" && (
         <div className="content-card">
           <div className="card-head">
             <div>
@@ -151,7 +175,7 @@ export function CourseView({
                 <b>資料の読み込みに失敗しました</b>
               </div>
             )}
-            {materialsState === "ready" && materials.length === 0 && (
+            {materialsState === "ready" && lectureMaterials.length === 0 && (
               <div className="empty-state">
                 <b>資料はまだありません</b>
                 <p>
@@ -161,7 +185,7 @@ export function CourseView({
                 </p>
               </div>
             )}
-            {materials.map((material) => (
+            {lectureMaterials.map((material) => (
               <div className="file-row" key={material.id}>
                 <span className="file-icon">
                   {extLabel(material.file_name, material.mime_type)}
@@ -180,7 +204,65 @@ export function CourseView({
             ))}
           </div>
         </div>
-      ) : (
+      )}
+      {activeTab === "misc" && (
+        <div className="content-card">
+          <div className="card-head">
+            <div>
+              <h2>雑資料</h2>
+              <p>著作権に関係のない資料です。棚を共有しているグループのメンバーも閲覧できます。</p>
+            </div>
+            {isOwner && (
+              <Button icon="upload" onClick={openMisc}>
+                資料を追加
+              </Button>
+            )}
+          </div>
+          <div className="file-list">
+            {materialsState === "loading" && (
+              <div className="empty-state">
+                <b>読み込み中…</b>
+              </div>
+            )}
+            {materialsState === "error" && (
+              <div className="empty-state">
+                <b>資料の読み込みに失敗しました</b>
+              </div>
+            )}
+            {materialsState === "ready" && miscMaterials.length === 0 && (
+              <div className="empty-state">
+                <b>雑資料はまだありません</b>
+                <p>
+                  {isOwner
+                    ? "「資料を追加」から最初のファイルを選んでください。"
+                    : "この棚に雑資料はまだありません。"}
+                </p>
+              </div>
+            )}
+            {miscMaterials.map((material) => (
+              <button
+                className="file-row quiz-row"
+                key={material.id}
+                onClick={() => void openMaterialFile(material)}
+              >
+                <span className="file-icon">
+                  {extLabel(material.file_name, material.mime_type)}
+                </span>
+                <div>
+                  <b>{material.file_name}</b>
+                  <small>
+                    {DATE_FMT.format(new Date(material.created_at))}追加
+                  </small>
+                </div>
+                <span className="private-pill">
+                  {shelf.shares.length > 0 ? "共有中" : "自分のみ"}
+                </span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+      {activeTab === "quiz" && (
         <div className="content-card">
           <div className="card-head">
             <div>

@@ -7,7 +7,7 @@ export async function GET() {
 
   const { data, error } = await supabase
     .from("materials")
-    .select("id, shelf_id, file_name, mime_type, size_bytes, created_at")
+    .select("id, shelf_id, kind, file_name, mime_type, size_bytes, created_at")
     .order("created_at", { ascending: false });
   if (error) {
     console.error("[materials]", error);
