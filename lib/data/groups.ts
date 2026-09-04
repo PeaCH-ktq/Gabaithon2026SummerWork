@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/lib/supabase/types";
 import { generateInviteCode, unwrap } from "./utils";
+import { leaveGroupViaApi, type LeaveGroupResult } from "@/lib/api/groups";
 
 type DB = SupabaseClient<Database>;
 type GroupRow = Database["public"]["Tables"]["groups"]["Row"];
@@ -96,17 +97,14 @@ export async function joinGroupByCode(supabase: DB, code: string): Promise<strin
   return data;
 }
 
-/** グループから脱退（本人のみ）。 */
-export async function leaveGroup(supabase: DB, groupId: string): Promise<void> {
-  const { data: auth } = await supabase.auth.getUser();
-  if (!auth.user) throw new Error("ログインが必要です。");
-  const { error } = await supabase
-    .from("group_members")
-    .delete()
-    .eq("group_id", groupId)
-    .eq("user_id", auth.user.id);
-  if (error) {
-    console.error("[data] グループ脱退", error);
-    throw new Error("グループの脱退に失敗しました。");
-  }
+/**
+ * グループから脱退（本人のみ）。
+ *
+ * `group_members` を直接 delete せず Route Handler を経由する。
+ * Google カレンダーへ書き込み済みの予定の取り消しと `calendar_events` の掃除が
+ * 必要で、`calendar_events` は RLS 全拒否のためクライアントからは触れないため。
+ * 詳細は [`app/api/groups/[id]/leave/route.ts`](../../app/api/groups/[id]/leave/route.ts)。
+ */
+export async function leaveGroup(groupId: string): Promise<LeaveGroupResult> {
+  return leaveGroupViaApi(groupId);
 }

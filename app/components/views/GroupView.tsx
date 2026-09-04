@@ -114,26 +114,20 @@ export function GroupView({ supabase, group, groupsState, userId, shelves, sessi
     if (leaving) return;
     const confirmed = isLastMember
       ? window.confirm(
-          `あなたが最後のメンバーです。脱退すると「${group!.name}」は削除され、共有中の棚の設定や今後の勉強会の予定もすべて消えます。`,
+          `あなたが最後のメンバーです。脱退すると「${group!.name}」は削除され、共有中の棚の設定・勉強会の予定・このグループに共有された課題もすべて消えます。`,
         )
-      : window.confirm(`「${group!.name}」から脱退します。`);
+      : window.confirm(
+          `「${group!.name}」から脱退します。あなたのカレンダーからこのグループの勉強会が削除されます。`,
+        );
     if (!confirmed) return;
     setLeaving(true);
     try {
-      // 最後の1人が抜けるとグループが自動削除され、study_sessions も cascade で消える。
-      // Google カレンダー上の予定は残るため、脱退の前に（＝まだメンバーとして
-      // /api/calendar/events を呼べるうちに）今後の予定を取り消しておく。
-      if (isLastMember) {
-        for (const s of sessions) {
-          try {
-            await unsyncSessionFromCalendar(s.id);
-          } catch (err) {
-            console.error("[GroupView] カレンダー取り消し", err);
-          }
-        }
-      }
-      await leaveGroup(supabase, group!.id);
-      notify(isLastMember ? "グループを削除しました" : "グループを抜けました");
+      // Google カレンダーの予定の取り消しと calendar_events の掃除は
+      // /api/groups/[id]/leave がまとめて行う（calendar_events は RLS 全拒否で
+      // クライアントからは触れないため）。ここでは結果を伝えるだけ。
+      const result = await leaveGroup(group!.id);
+      if (needsReauth(result, userId)) setReauthNeeded(true);
+      notify(result.group_deleted ? "グループを削除しました" : "グループを抜けました");
       onLeft();
     } catch (err) {
       notify(err instanceof Error ? err.message : "グループの脱退に失敗しました");

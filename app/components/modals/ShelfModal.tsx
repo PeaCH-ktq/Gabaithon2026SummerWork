@@ -9,11 +9,14 @@ export function ShelfModal({
   saving,
   onClose,
   onSave,
+  onDelete,
 }: {
   initial?: Shelf;
   saving?: boolean;
   onClose: () => void;
   onSave: (values: ShelfFormValues, id?: string) => void;
+  /** 自分が所有する棚を編集しているときだけ渡される。 */
+  onDelete?: () => void;
 }) {
   const [name, setName] = useState(initial?.course_name ?? "");
   const [code, setCode] = useState(initial?.course_code ?? "");
@@ -36,6 +39,27 @@ export function ShelfModal({
       },
       initial?.id,
     );
+  }
+
+  /**
+   * 棚を消すと資料・問題集・課題・共有設定まで cascade で消える。
+   * 資料の実ファイルも Storage から消える（`lib/data/shelves.deleteShelf`）ので、
+   * 何が失われるかを件数で示してから確認する。
+   */
+  function confirmDelete() {
+    if (!initial || !onDelete || saving) return;
+    const losses = [
+      initial.materialCount > 0 ? `講義資料 ${initial.materialCount}件` : null,
+      initial.miscCount > 0 ? `雑資料 ${initial.miscCount}件` : null,
+      initial.questionSetCount > 0 ? `問題集 ${initial.questionSetCount}件` : null,
+      initial.shares.length > 0 ? `${initial.shares.length}グループへの共有` : null,
+    ].filter((item): item is string => item !== null);
+    const detail =
+      losses.length > 0
+        ? `\n\n${losses.join("・")}も削除されます。この操作は取り消せません。`
+        : "\n\nこの操作は取り消せません。";
+    if (!window.confirm(`「${initial.course_name}」を削除します。${detail}`)) return;
+    onDelete();
   }
 
   return (
@@ -65,8 +89,8 @@ export function ShelfModal({
         <label className="text-field">担当教員<input value={professor} onChange={(e) => setProfessor(e.target.value)} /></label>
         <label className="text-field">教室<input value={room} onChange={(e) => setRoom(e.target.value)} /></label>
         <div className="modal-actions">
-          {initial ? (
-            <Button danger disabled={saving}>講義を削除</Button>
+          {initial && onDelete ? (
+            <Button danger disabled={saving} onClick={confirmDelete}>講義を削除</Button>
           ) : (
             <Button subtle onClick={onClose}>キャンセル</Button>
           )}

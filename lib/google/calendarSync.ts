@@ -113,19 +113,25 @@ export async function syncStudySessionToCalendars(
 }
 
 /**
- * study_session に紐づく全メンバーぶんの Google イベントを削除し、
- * `calendar_events` 行も消す。`study_sessions` 行自体は消さない。
+ * study_session に紐づく Google イベントを削除し、`calendar_events` 行も消す。
+ * `study_sessions` 行自体は消さない。
+ *
+ * `userId` を渡すとそのユーザーぶんだけを取り消す（グループ脱退時に使う）。
+ * 省略すると全メンバーぶんを取り消す。
  */
 export async function unsyncStudySession(
   studySessionId: string,
+  userId?: string,
 ): Promise<UnsyncResult> {
   const admin = getSupabaseAdminClient();
   const result: UnsyncResult = { deleted: [], failed: [] };
 
-  const { data: rows, error } = await admin
+  let query = admin
     .from("calendar_events")
     .select("user_id, google_event_id")
     .eq("study_session_id", studySessionId);
+  if (userId) query = query.eq("user_id", userId);
+  const { data: rows, error } = await query;
   if (error) {
     throw new Error(`calendar_events の取得に失敗しました: ${error.message}`);
   }

@@ -17,9 +17,9 @@ import { GroupView } from "./components/views/GroupView";
 import { HomeView } from "./components/views/HomeView";
 import { QuizView } from "./components/views/QuizView";
 import { TasksView } from "./components/views/TasksView";
-import type { AccountProfile, AssignmentReportRow, AssignmentRow, GroupRow, LoadState, MaterialRow, QuestionSetRow, Shelf, ShelfFormValues, StudySessionFormValues, StudySessionRow, View } from "./types";
+import type { AccountProfile, AssignmentReportRow, GroupRow, LoadState, MaterialRow, QuestionSetRow, Shelf, ShelfFormValues, StudySessionFormValues, StudySessionRow, View } from "./types";
 import { createClient } from "@/lib/supabase/client";
-import { createShelf, listShelves, updateShelf } from "@/lib/data/shelves";
+import { createShelf, deleteShelf, listShelves, updateShelf } from "@/lib/data/shelves";
 import { deleteMaterial, listMaterialsByShelf, uploadMaterial } from "@/lib/data/materials";
 import { listQuestionSetsByShelf } from "@/lib/data/questionSets";
 import { createGroup, joinGroupByCode, listMyGroups } from "@/lib/data/groups";
@@ -32,8 +32,8 @@ import {
   deleteAssignmentReport,
   listAssignments,
   listMyAssignmentReports,
-  pickAssignmentGroupId,
   upsertAssignmentReport,
+  type Assignment,
 } from "@/lib/data/assignments";
 import { pickShelfColor } from "@/lib/format/schedule";
 import { buildAssignmentView, type AssignmentView } from "@/lib/format/assignments";
@@ -71,7 +71,7 @@ export default function Home() {
   const [sessions, setSessions] = useState<StudySessionRow[]>([]);
   const [sessionsState, setSessionsState] = useState<LoadState>("loading");
   const [savingSession, setSavingSession] = useState(false);
-  const [assignments, setAssignments] = useState<AssignmentRow[]>([]);
+  const [assignments, setAssignments] = useState<Assignment[]>([]);
   const [myAssignmentReports, setMyAssignmentReports] = useState<
     AssignmentReportRow[]
   >([]);
@@ -296,6 +296,24 @@ export default function Home() {
     }
   }
 
+  async function removeShelf(shelf: Shelf) {
+    setSavingShelf(true);
+    try {
+      await deleteShelf(supabase, shelf.id);
+      const rows = await loadShelves();
+      setSelectedShelfId(rows[0]?.id ?? null);
+      setModal("none");
+      navigate("home");
+      // 棚が消えると課題・共有も cascade で消えるので取り直す。
+      await Promise.all([loadAssignments(), loadGroups()]);
+      notify(`「${shelf.course_name}」を削除しました`);
+    } catch (err) {
+      notify(err instanceof Error ? err.message : "棚の削除に失敗しました");
+    } finally {
+      setSavingShelf(false);
+    }
+  }
+
   async function handleCreateGroup(name: string) {
     setCreatingGroup(true);
     try {
@@ -351,7 +369,9 @@ export default function Home() {
           unshareShelf(supabase, shareShelfTarget.id, groupId),
         ),
       ]);
-      await loadShelves();
+      // 共有解除は on_shelf_unshared トリガーで assignment_shares と、
+      // どこからも見えなくなった課題そのものを消す。課題一覧も取り直す。
+      await Promise.all([loadShelves(), loadAssignments()]);
       setModal("none");
       setShareShelfId(null);
       notify(
@@ -460,24 +480,31 @@ export default function Home() {
         };
       });
 
+  // 成否を返すのは、呼び出し側（TasksView）が成功トーストを出すかどうかを
+  // 判断できるようにするため。ここで握りつぶすと、単一 state のトーストが
+  // 後勝ちで「追加しました」に上書きされ、失敗が成功に見えてしまう。
   async function addAssignment(values: {
     title: string;
     shelfId: string;
     dueAt: string;
-  }) {
+    groupIds: string[];
+  }): Promise<boolean> {
     setSavingAssignment(true);
     try {
-      const shelf = shelves.find((item) => item.id === values.shelfId);
-      const groupId = shelf ? pickAssignmentGroupId(shelf) : null;
-      await createAssignment(supabase, {
-        shelf_id: values.shelfId,
-        group_id: groupId,
-        title: values.title,
-        due_at: values.dueAt,
-      });
+      await createAssignment(
+        supabase,
+        {
+          shelf_id: values.shelfId,
+          title: values.title,
+          due_at: values.dueAt,
+        },
+        values.groupIds,
+      );
       await loadAssignments();
+      return true;
     } catch (err) {
       notify(err instanceof Error ? err.message : "課題の追加に失敗しました");
+      return false;
     } finally {
       setSavingAssignment(false);
     }
@@ -486,7 +513,7 @@ export default function Home() {
   async function saveAssignmentReport(
     assignmentId: string,
     report: AssignmentReport,
-  ) {
+  ): Promise<boolean> {
     setSavingAssignmentReport(true);
     try {
       await upsertAssignmentReport(supabase, {
@@ -495,10 +522,12 @@ export default function Home() {
         comment: report.comment,
       });
       await loadAssignments();
+      return true;
     } catch (err) {
       notify(
         err instanceof Error ? err.message : "課題結果の投稿に失敗しました",
       );
+      return false;
     } finally {
       setSavingAssignmentReport(false);
     }
@@ -528,14 +557,16 @@ export default function Home() {
     }
   }
 
-  async function restoreAssignment(assignmentId: string) {
+  async function restoreAssignment(assignmentId: string): Promise<boolean> {
     try {
       await deleteAssignmentReport(supabase, assignmentId);
       await loadAssignments();
+      return true;
     } catch (err) {
       notify(
         err instanceof Error ? err.message : "未完了に戻す操作に失敗しました",
       );
+      return false;
     }
   }
 
@@ -651,6 +682,7 @@ export default function Home() {
             completed={completedAssignments}
             assignmentsState={assignmentsState}
             shelves={shelves}
+            groups={groups}
             userId={userId}
             saving={savingAssignment}
             savingReport={savingAssignmentReport}
@@ -676,8 +708,10 @@ export default function Home() {
             notify={notify}
             openSchedule={() => setModal("schedule")}
             openGroupModal={() => setModal("group")}
-            onLeft={() => { void loadGroups(); }}
-            onSharesChanged={() => { void loadShelves(); }}
+            onLeft={() => { void loadGroups(); void loadAssignments(); }}
+            // 棚の表示/非表示は課題の可視性（is_shelf_shared_to）にも効くので
+            // 課題一覧もあわせて取り直す。
+            onSharesChanged={() => { void loadShelves(); void loadAssignments(); }}
             onSessionsChanged={() => { void loadSessions(); }}
           />
         )}
@@ -710,6 +744,12 @@ export default function Home() {
         <ShelfModal
           initial={selectedShelf ?? undefined}
           saving={savingShelf}
+          // 削除できるのは編集中の自分の棚だけ（RLS の shelves 書き込みポリシーと一致）。
+          onDelete={
+            selectedShelf && selectedShelf.owner_id === userId
+              ? () => void removeShelf(selectedShelf)
+              : undefined
+          }
           onClose={() => setModal("none")}
           onSave={saveShelf}
         />

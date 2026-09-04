@@ -128,7 +128,8 @@ export interface Database {
           id: string;
           name: string;
           invite_code: string;
-          created_by: string;
+          /** 作成者のアカウント削除で null になる（`on delete set null`）。 */
+          created_by: string | null;
           created_at: string;
         };
         Insert: {
@@ -219,15 +220,14 @@ export interface Database {
         Row: {
           id: string;
           shelf_id: string;
-          group_id: string | null;
-          created_by: string;
+          /** 作成者のアカウント削除で null になる（`on delete set null`）。 */
+          created_by: string | null;
           title: string;
           due_at: string;
           created_at: string;
         };
         Insert: {
           shelf_id: string;
-          group_id?: string | null;
           created_by: string;
           title: string;
           due_at: string;
@@ -236,6 +236,21 @@ export interface Database {
           title: string;
           due_at: string;
         }>;
+        Relationships: [];
+      };
+      /** 課題のグループ共有（多対多）。旧 `assignments.group_id` の置き換え。 */
+      assignment_shares: {
+        Row: {
+          id: string;
+          assignment_id: string;
+          group_id: string;
+          created_at: string;
+        };
+        Insert: {
+          assignment_id: string;
+          group_id: string;
+        };
+        Update: never;
         Relationships: [];
       };
       assignment_reports: {
@@ -303,6 +318,18 @@ export interface Database {
       };
       is_shelf_shared: {
         Args: { sid: string };
+        Returns: boolean;
+      };
+      is_shelf_shared_to: {
+        Args: { sid: string; gid: string };
+        Returns: boolean;
+      };
+      owns_assignment: {
+        Args: { aid: string };
+        Returns: boolean;
+      };
+      is_assignment_visible: {
+        Args: { aid: string };
         Returns: boolean;
       };
     };

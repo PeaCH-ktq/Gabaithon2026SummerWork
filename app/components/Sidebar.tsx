@@ -85,10 +85,15 @@ export function Sidebar({ view, navigate, openShelves, groups, selectedGroupId, 
           >
             <Icon name="users" />
             <span>{selectedGroup?.name ?? "グループを作る"}</span>
-            {groups.length > 1 && (
+            {/*
+              グループが1つでも矢印を出す。ここはグループの切り替えだけでなく
+              「グループを作成 / 参加」への唯一の入口でもあるため、`> 1` にすると
+              ちょうど1つ所属している人が2つ目に参加できなくなる。
+            */}
+            {groups.length > 0 && (
               <span
                 role="button"
-                aria-label="グループを切り替える"
+                aria-label="グループを切り替える・追加する"
                 className="group-switcher-toggle"
                 onClick={(e) => {
                   e.stopPropagation();
@@ -97,9 +102,6 @@ export function Sidebar({ view, navigate, openShelves, groups, selectedGroupId, 
               >
                 <Icon name="arrow" size={12} />
               </span>
-            )}
-            {groups.length <= 1 && selectedGroup && (
-              <span className="online-dot" />
             )}
           </button>
           {switcherOpen && (

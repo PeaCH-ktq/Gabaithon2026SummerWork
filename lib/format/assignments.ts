@@ -46,8 +46,10 @@ export function formatMinutes(minutes: number): string {
 export type AssignmentView = {
   id: string;
   shelfId: string;
-  groupId: string | null;
-  createdBy: string;
+  /** 共有先グループ。空配列＝個人課題。 */
+  groupIds: string[];
+  /** 作成者。アカウント削除で null になる。 */
+  createdBy: string | null;
   dueAt: string;
   title: string;
   course: string;
@@ -60,8 +62,8 @@ export function buildAssignmentView(
   row: {
     id: string;
     shelf_id: string;
-    group_id: string | null;
-    created_by: string;
+    groupIds: string[];
+    created_by: string | null;
     title: string;
     due_at: string;
   },
@@ -70,7 +72,7 @@ export function buildAssignmentView(
   return {
     id: row.id,
     shelfId: row.shelf_id,
-    groupId: row.group_id,
+    groupIds: row.groupIds,
     createdBy: row.created_by,
     dueAt: row.due_at,
     title: row.title,

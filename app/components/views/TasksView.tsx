@@ -1,8 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import type { LoadState, Notify, Shelf } from "../../types";
+import type { GroupRow, LoadState, Notify, Shelf } from "../../types";
 import { formatMinutes, type AssignmentView } from "@/lib/format/assignments";
+import { shareableGroupIds } from "@/lib/data/assignments";
 import {
   AssignmentReportModal,
   type AssignmentReport,
@@ -18,20 +19,24 @@ type Props = {
   completed: CompletedTask[];
   assignmentsState: LoadState;
   shelves: Shelf[];
+  groups: GroupRow[];
   userId: string | null;
   saving: boolean;
   savingReport: boolean;
   deleting: boolean;
+  // 保存系は成否を返す。失敗しているのに成功トーストを出さないため
+  // （トーストは単一 state なので後勝ちで上書きされてしまう）。
   onAddTask: (values: {
     title: string;
     shelfId: string;
     dueAt: string;
-  }) => Promise<void>;
-  onRestore: (assignmentId: string) => Promise<void>;
+    groupIds: string[];
+  }) => Promise<boolean>;
+  onRestore: (assignmentId: string) => Promise<boolean>;
   onSaveReport: (
     assignmentId: string,
     report: AssignmentReport,
-  ) => Promise<void>;
+  ) => Promise<boolean>;
   onDelete: (assignmentId: string) => Promise<void>;
   openCourse: (shelfId: string) => void;
 };
@@ -42,6 +47,7 @@ export function TasksView({
   completed,
   assignmentsState,
   shelves,
+  groups,
   userId,
   saving,
   savingReport,
@@ -58,34 +64,69 @@ export function TasksView({
   const [title, setTitle] = useState("");
   const [shelfId, setShelfId] = useState(shelves[0]?.id ?? "");
   const [date, setDate] = useState("");
+  const [shareGroupIds, setShareGroupIds] = useState<string[]>([]);
+
+  // 選んだ講義が「表示中」で共有されているグループだけが共有先に選べる
+  // （assignment_shares の insert ポリシーが同じ条件を要求する）。
+  const selectedShelf = shelves.find((shelf) => shelf.id === shelfId) ?? null;
+  const shareableIds = selectedShelf ? shareableGroupIds(selectedShelf) : [];
+  const shareableGroups = groups.filter((group) => shareableIds.includes(group.id));
+
+  /** 講義を変えたら共有先の選択肢が変わるので、既定で全部にチェックし直す。 */
+  function selectShelf(nextShelfId: string) {
+    setShelfId(nextShelfId);
+    const shelf = shelves.find((item) => item.id === nextShelfId);
+    setShareGroupIds(shelf ? shareableGroupIds(shelf) : []);
+  }
+
+  function openForm() {
+    const initialShelfId = shelfId || shelves[0]?.id || "";
+    selectShelf(initialShelfId);
+    setShowForm(true);
+  }
+
+  function toggleShareGroup(groupId: string) {
+    setShareGroupIds((ids) =>
+      ids.includes(groupId) ? ids.filter((id) => id !== groupId) : [...ids, groupId],
+    );
+  }
 
   function openReport(assignmentId: string) {
     setReportTarget(assignmentId);
   }
 
   async function restoreTask(task: CompletedTask) {
-    await onRestore(task.id);
+    if (!(await onRestore(task.id))) return;
     notify("未完了に戻しました");
   }
 
   async function saveReport(report: AssignmentReport) {
     if (!reportTarget) return;
-    await onSaveReport(reportTarget, report);
+    if (!(await onSaveReport(reportTarget, report))) return;
     setReportTarget(null);
     notify("課題の結果を投稿しました");
   }
 
   async function addTask() {
     if (!title.trim() || !shelfId || !date) return;
-    await onAddTask({
+    // 共有先の選択肢から外れたグループが残らないよう、保存直前に絞り込む。
+    const groupIds = shareGroupIds.filter((id) => shareableIds.includes(id));
+    const ok = await onAddTask({
       title: title.trim(),
       shelfId,
       dueAt: new Date(date).toISOString(),
+      groupIds,
     });
+    // 失敗時は入力を残したままフォームを開いておく（エラートーストは親が出す）。
+    if (!ok) return;
     setTitle("");
     setDate("");
     setShowForm(false);
-    notify("課題を追加しました");
+    notify(
+      groupIds.length > 0
+        ? `課題を追加し、${groupIds.length}つのグループに共有しました`
+        : "課題を追加しました",
+    );
   }
 
   const detail =
@@ -102,7 +143,7 @@ export function TasksView({
   const completedTarget = completed.find((task) => task.id === reportTarget);
   const target = upcomingTarget ?? completedTarget;
   const targetInitial = completedTarget?.report;
-  const targetSharedWithGroup = target ? target.groupId !== null : false;
+  const targetSharedWithGroup = target ? target.groupIds.length > 0 : false;
 
   return (
     <>
@@ -114,7 +155,7 @@ export function TasksView({
         <Button
           primary
           icon="plus"
-          onClick={() => setShowForm(true)}
+          onClick={openForm}
           disabled={shelves.length === 0}
         >
           課題を追加
@@ -144,7 +185,7 @@ export function TasksView({
               講義
               <select
                 value={shelfId}
-                onChange={(event) => setShelfId(event.target.value)}
+                onChange={(event) => selectShelf(event.target.value)}
               >
                 {shelves.map((shelf) => (
                   <option key={shelf.id} value={shelf.id}>
@@ -162,6 +203,39 @@ export function TasksView({
               onChange={(event) => setDate(event.target.value)}
             />
           </label>
+          <div className="text-field">
+            共有先
+            {shareableGroups.length === 0 ? (
+              <p className="muted">
+                この講義は共有されていないため、自分だけの課題になります。
+              </p>
+            ) : (
+              <>
+                <div className="selection-list">
+                  {shareableGroups.map((group) => (
+                    <label key={group.id}>
+                      <input
+                        type="checkbox"
+                        checked={shareGroupIds.includes(group.id)}
+                        onChange={() => toggleShareGroup(group.id)}
+                      />
+                      <span className="custom-check">
+                        <Icon name="check" size={13} />
+                      </span>
+                      <div>
+                        <b>{group.name}</b>
+                      </div>
+                    </label>
+                  ))}
+                </div>
+                {shareGroupIds.length === 0 && (
+                  <p className="muted">
+                    どこにも共有しない場合、自分だけの課題になります。
+                  </p>
+                )}
+              </>
+            )}
+          </div>
           <div className="modal-actions">
             <Button subtle onClick={() => setShowForm(false)} disabled={saving}>
               キャンセル

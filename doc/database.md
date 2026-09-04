@@ -103,7 +103,7 @@ SECURITY DEFINER 関数）で非所有者にも許可する。
 | --- | --- | --- |
 | name | text | グループ名 |
 | invite_code | text unique | シリアルコード（参加用） |
-| created_by | uuid FK→profiles | 作成者 |
+| created_by | uuid FK→profiles ON DELETE SET NULL, nullable | 作成者 |
 
 ### group_members — グループ所属
 
@@ -136,7 +136,7 @@ owner も自由に脱退できる。`pg_trigger_depth()` ガードで cascade �
 | カラム | 型 | 説明 |
 | --- | --- | --- |
 | group_id | uuid FK→groups | — |
-| created_by | uuid FK→profiles | 作成者 |
+| created_by | uuid FK→profiles ON DELETE CASCADE | 作成者。消えると予定ごと消える |
 | title | text | 予定名 |
 | location | text | 場所 |
 | starts_at | timestamptz | 開始日時 |
@@ -147,22 +147,65 @@ owner も自由に脱退できる。`pg_trigger_depth()` ガードで cascade �
 | カラム | 型 | 説明 |
 | --- | --- | --- |
 | shelf_id | uuid FK→shelves ON DELETE CASCADE | 講義（棚）への参照 |
-| group_id | uuid FK→groups ON DELETE CASCADE, nullable | 共有先グループ（`pickAssignmentGroupId` が採番） |
-| created_by | uuid FK→profiles | 作成者 |
+| created_by | uuid FK→profiles ON DELETE SET NULL, nullable | 作成者 |
 | title | text | レポート名 |
 | due_at | timestamptz | 期限 |
 
 ホーム画面の「7 日以内の締切」は `due_at` を絞り込むだけで取得できる。
 
-**共有状態への追従**（[`20260904120000_unshare_cascades_assignments.sql`](../supabase/migrations/20260904120000_unshare_cascades_assignments.sql)）:
+### assignment_shares — 課題のグループ共有
 
-- 表示可否は `assignments.group_id`（作成時に焼き込まれ不変）ではなく、
-  `is_shelf_shared_to(shelf_id, group_id)`（対象棚がそのグループへ `visible = true` で
-  共有されているか）を live で見る。棚を**非表示**にすると課題も学習記録も隠れ、戻せば復活する。
+| カラム | 型 | 説明 |
+| --- | --- | --- |
+| assignment_id | uuid FK→assignments ON DELETE CASCADE | — |
+| group_id | uuid FK→groups ON DELETE CASCADE | 共有先グループ |
+
+`unique (assignment_id, group_id)`。行が 0 件の課題＝個人課題（作成者と棚の所有者だけが見る）。
+
+**旧 `assignments.group_id`（スカラ1列）の置き換え**
+（[`20260904140000_assignment_shares.sql`](../supabase/migrations/20260904140000_assignment_shares.sql)）。
+1列しか持てなかったため `pickAssignmentGroupId` が「可視共有先がちょうど 1 件のときだけ共有、
+0 件・複数件なら個人課題」という妥協をしており、**棚を 2 グループ以上へ共有すると、そこに作った
+課題がどのグループにも表示されなかった**。UI は `TasksView` の課題追加フォームで共有先を
+チェックボックスで複数選ぶ（選択肢は `shareableGroupIds(shelf)` ＝棚が「表示中」で共有中のグループ）。
+
+> **適用順の注意**: このマイグレーションの末尾は `alter table assignments drop column group_id;`。
+> 対応するコードをデプロイする**前に**適用してしまい、本番の `createAssignment` が消えた列へ
+> insert し続けて PostgREST の `PGRST204` で全ユーザーの課題追加が落ちる、という事故を実際に起こした
+> （症状は「成功トーストは出るのに一覧に出ない」）。**列を落とすマイグレーションはコードのデプロイ後に
+> 適用すること。**
+
+**共有状態への追従**（[`20260904120000`](../supabase/migrations/20260904120000_unshare_cascades_assignments.sql)
+＋ [`20260904140000`](../supabase/migrations/20260904140000_assignment_shares.sql)）:
+
+- 表示可否は共有行（作成時に焼き込まれ不変）ではなく `is_assignment_visible(id)`
+  ＝「共有先のどれか 1 つでも *自分がメンバー* かつ *`is_shelf_shared_to(shelf_id, group_id)`* を
+  満たすか」を live で見る。棚を**非表示**にすると課題も学習記録も隠れ、戻せば復活する。
 - 棚の**共有解除**（`shelf_shares` 行の削除）は `on_shelf_unshared` トリガーで、その
-  (棚, グループ) 向けの `assignments` を物理削除する（`assignment_reports` は FK カスケード）。
-  棚削除・グループ削除の連鎖でも同様に消える（`group_id` は `on delete set null` から
-  `cascade` へ変更済み）。
+  (棚, グループ) 向けの `assignment_shares` を削除する。**他のグループへの共有が残っていれば
+  課題自体は残る**。共有先が 1 件も残らず、かつ作成者が棚の所有者でもない課題だけを物理削除する
+  （`assignment_reports` は FK カスケード）。棚削除・グループ削除の連鎖でも同じトリガーが効く。
+- 同トリガーは `question_set_shares` も同じ (棚, グループ) で掃除する。
+
+> **`assignment_shares` の insert チェックに `assignment_shelf_shared_to` が必須な理由**:
+> これが無いと、所属グループでさえあれば「共有していない棚」の課題にも共有行を挿せてしまう。
+> `is_assignment_visible` が `is_shelf_shared_to` を要求するので画面には出ないが、
+> `on_shelf_unshared` は `shelf_shares` の**削除**で発火するトリガーなので、そもそも共有が
+> 存在しなかったケースでは永久に発火せず、**どの掃除経路にも拾われない不可視の孤児行**が残る。
+
+> **`assignments_select` に `created_by = auth.uid()` の枝が要る理由**
+> （[`20260904160000`](../supabase/migrations/20260904160000_assignment_select_creator.sql)）:
+> `createAssignment` は insert 直後に `.select().single()` で行を読み戻すが、この時点では
+> `assignment_shares` 行がまだ無く `is_assignment_visible` は false。棚の所有者でないメンバーが
+> 「共有された講義」に課題を作ると RETURNING が SELECT ポリシーに弾かれ、**課題の作成そのものが
+> 失敗していた**（`assignments_insert` は `is_shelf_shared` を許すので insert は通る）。
+> 同じ理由で「共有された講義に共有先 0 件の個人課題」は作成者にすら見えなかった。
+> 共有解除後に見え続ける心配は無い（`on_shelf_unshared` が共有 0 件かつ作成者≠棚所有者の課題を消す）。
+
+> **学習記録のグループ跨ぎ**: 1 つの課題を A と B へ同時共有すると、`assignment_reports_select`
+> （＝`is_assignment_visible`）は A のメンバーの report を B のメンバーにも見せる。RLS としては
+> 筋が通っているが利用者には驚きなので、`lib/data/assignments.ts:listGroupStudyLog` が
+> **そのグループのメンバーが書いた report だけ**に絞っている（表示側で閉じる）。
 
 ### assignment_reports — 課題結果投稿
 
@@ -246,17 +289,71 @@ $$;
 | question_sets | 本人、または `is_shelf_shared(shelf_id)`（棚が可視共有されていれば中身の問題集も見える）、または `question_set_shares` 経由で `is_group_member` | 本人のみ |
 | question_set_shares | `is_group_member` または `owns_question_set`（SECURITY DEFINER。再帰回避） | `owns_question_set` |
 | groups | `is_group_member(id)` または `created_by = auth.uid()` | 作成は誰でも可、更新は `role = 'owner'`、削除はメンバー全員（`groups_delete_member`）。空グループの掃除は `on_group_member_left` トリガーが担う |
-| group_members | `is_group_member(group_id)` | `join_group_by_code` 経由のみ insert、脱退は本人 |
+| group_members | `is_group_member(group_id)` | `join_group_by_code` 経由のみ insert、脱退は本人（実際の導線は `POST /api/groups/[id]/leave`） |
 | shelf_shares | `is_group_member(group_id)` | insert/update/delete とも対象棚の所有者 |
 | study_sessions | `is_group_member(group_id)` | 作成はメンバー、更新・削除は作成者 |
-| assignments | `is_group_member(group_id)` かつ `is_shelf_shared_to(shelf_id, group_id)`（棚が可視共有中）、または `shelf_id` の所有者 | 作成はメンバー、更新・削除は作成者。共有解除で `on_shelf_unshared` トリガーが物理削除 |
-| assignment_reports | 対象課題のグループの `is_group_member` かつ `is_shelf_shared_to`（`group_id` が非 NULL の課題のみ） | 本人の行のみ |
+| assignments | `created_by = auth.uid()`、`is_assignment_visible(id)`、または `shelf_id` の所有者 | 作成は「棚の所有者 or `is_shelf_shared(shelf_id)`」かつ `created_by = auth.uid()`。**更新・削除は作成者または棚の所有者**（`created_by` が SET NULL されても詰まないように） |
+| assignment_shares | `is_group_member(group_id)` または `owns_assignment` | insert は `owns_assignment` かつ `is_group_member` かつ `assignment_shelf_shared_to`、delete は `owns_assignment` または `owns_assignment_shelf` |
+| assignment_reports | `is_assignment_visible(assignment_id)` | 本人の行のみ |
 | google_credentials | **ポリシー無し（全拒否）** | サーバー（service-role）のみ |
 | calendar_events | **ポリシー無し（全拒否）** | サーバー（service-role）のみ |
 
 > `google_credentials` / `calendar_events` は [`0002_rls.sql`](../supabase/migrations/0002_rls.sql) で
 > `enable row level security` だけ行い、ポリシーを 1 つも作っていない（= 全クライアントアクセス拒否）。
 > 読み書きは admin クライアント経由のサーバーコードからのみ。
+
+## 削除経路と孤立データ
+
+削除まわりを一通り精査した結果
+（[`20260904150000_orphan_cleanup.sql`](../supabase/migrations/20260904150000_orphan_cleanup.sql)）。
+新しい削除経路を足すときはこの表を更新すること。
+
+| 経路 | 連鎖 |
+| --- | --- |
+| 資料削除 | `lib/data/materials.deleteMaterial` が Storage を**先に**消してから行を削除。`question_sets.source_material_id` は FK で SET NULL、`source_material_ids` 配列は `on_material_deleted` トリガーが `array_remove` する |
+| 棚削除 | Storage を先に消してから cascade（`materials` / `question_sets` / `shelf_shares` / `assignments`）。`shelf_shares` の cascade が `on_shelf_unshared` を発火させ、課題・問題集共有も掃除される |
+| 棚の共有解除 | `on_shelf_unshared` → その (棚, グループ) の `assignment_shares` と `question_set_shares` を削除。共有先が 0 件になり作成者が棚の所有者でもない課題だけ物理削除 |
+| 棚の非表示 | `is_shelf_shared_to` が false になり RLS で隠れるだけ。戻せば復活する |
+| 課題削除 | `assignment_shares` / `assignment_reports` が cascade |
+| グループ脱退 | **`POST /api/groups/[id]/leave`**（下記）。`group_members` 行の削除が `on_group_member_left` を発火させ、残メンバー 0 件ならグループごと削除 |
+| グループ削除 | `group_members` / `shelf_shares` / `question_set_shares` / `study_sessions` / `assignment_shares` が cascade。`shelf_shares` の cascade で `on_shelf_unshared` も走る。`calendar_events` は `study_sessions` 経由で cascade |
+| ユーザー削除 | `auth.users` → `profiles` cascade → `shelves` / `materials` / `question_sets` / `group_members` / `assignment_reports` / `calendar_events` / `google_credentials` が cascade。`created_by` 系は下記 |
+
+### グループ脱退を Route Handler に集約している理由
+
+`group_members` から自分の行を消すだけだと、Google カレンダーへ書き込み済みの勉強会イベントと
+`calendar_events` 行が残る。`calendar_events` は RLS 全拒否でクライアントからは掃除できないため、
+[`app/api/groups/[id]/leave/route.ts`](../app/api/groups/[id]/leave/route.ts) に脱退そのものを寄せた。
+
+- **最後の1人** … グループが消えて `study_sessions` も cascade で消えるので、
+  **終了済みを含む全期間**の予定を全員ぶん取り消してから抜ける
+  （旧 `GroupView` は `ends_at >= now` の今後の予定しか取り消しておらず、過去の予定が残っていた）
+- **それ以外** … 自分ぶんの予定だけ取り消す。他のメンバーのカレンダーはそのまま
+
+権限判定はポリシーに委ねたいので、`group_members` の delete 自体はユーザースコープのクライアントで
+実行する（`group_members_delete_self` が効き、`on_group_member_left` が `pg_trigger_depth() = 1` で
+正しく発火する）。Google 側の取り消しと `calendar_events` の掃除だけ service-role を使う。
+
+### `created_by` 系 FK の ON DELETE
+
+`0001_init.sql` は `groups` / `study_sessions` / `assignments` の `created_by` を
+`references profiles(id)` とだけ書いており ON DELETE を指定していなかった（＝ NO ACTION）。
+そのため**グループ・勉強会・課題を1つでも作ったユーザーは `profiles` の削除が FK 違反で失敗し、
+`auth.users` ごと消せなかった**（Supabase ダッシュボードからも削除不可）。
+
+| テーブル | 挙動 | 理由 |
+| --- | --- | --- |
+| `groups.created_by` | SET NULL | グループはメンバーのものなので作成者が消えても残す。`handle_new_group` に null ガードを追加済み |
+| `study_sessions.created_by` | CASCADE | キャンセル権限（`study_sessions_delete_own`）が `created_by` 依存。SET NULL だと誰にも消せない予定が残る |
+| `assignments.created_by` | SET NULL | 他人が作った課題を巻き添えで消さない。`assignments_update_own` / `_delete_own` に棚の所有者を足してあるので手が付けられなくなることはない |
+
+### 既知の穴（対応不可）
+
+**ユーザー削除時の Storage 孤児**。`profiles` の cascade で `materials` 行は消えるが、
+Storage 上のオブジェクトは残る。アプリ側の削除経路（`deleteMaterial` / `deleteShelf`）は
+行削除の前に `storage.remove()` するが、DB のカスケードは Storage に及ばず、DB トリガーから
+Storage API を叩く手段もない（`pg_net` 未導入）。ユーザー削除は運用上まれなので、
+必要なら Storage の `{user_id}/` フォルダを手動で削除する。
 
 ## Storage
 
@@ -439,6 +536,7 @@ Route Handler を置くのは以下のいずれかに該当する場合**のみ*
 | `POST /api/questions/generate` | 実装済み。`materialIds`（複数, 最大6件）受け取り＋`question_sets` 保存＋`getUser()` 認証 | `GEMINI_API_KEY` | 複数資料を横断参照して問題生成 |
 | `POST /api/calendar/events` | 実装済み・UI 接続済み | refresh token + Calendar API | 勉強予定をグループ全員の Google Calendar へ |
 | `DELETE /api/calendar/events/[id]` | 実装済み・UI 接続済み（`[id]` = `study_session_id`） | refresh token + Calendar API | 上記の全員ぶん取り消し |
+| `POST /api/groups/[id]/leave` | 実装済み・UI 接続済み（`[id]` = `group_id`） | service-role + Calendar API | グループ脱退。自分（最後の1人なら全員）の勉強会をカレンダーから取り消し、`calendar_events` を掃除してから `group_members` を削除 |
 
 `POST /api/questions/generate` の詳細ペイロード/エラーは既存実装
 （`multipart/form-data`、`materialIds`（複数キー、1〜6件、合計100MB以内）必須、
@@ -590,8 +688,11 @@ Route Handler を置くのは以下のいずれかに該当する場合**のみ*
   - `page.tsx` に `groups` / `groupsState` / `selectedGroupId` state を追加。`loadGroups` で
     `listMyGroups` を読み、選択中グループが一覧から消えたら先頭グループへフォールバック。
   - `Sidebar` は `groupName` 固定 prop を廃し、`groups` / `selectedGroupId` / `onSelectGroup` /
-    `onCreateGroup` を受け取る。TOGETHER の nav-item は 1 つのまま、複数グループがあるときだけ
-    矢印から `.group-switcher` ポップオーバー（外側クリックで閉じる）を開いて切り替える。
+    `onCreateGroup` を受け取る。TOGETHER の nav-item は 1 つのまま、**グループを 1 つ以上
+    持っていれば**矢印から `.group-switcher` ポップオーバー（外側クリックで閉じる）を開いて
+    切り替える。このポップオーバーは「グループを作成 / 参加」への唯一の入口も兼ねるため、
+    表示条件を `groups.length > 1` にすると**ちょうど 1 つ所属している人が 2 つ目に参加できなくなる**
+    （実際にその状態になっていた）。
   - `GroupModal`（新規）: グループ作成（`createGroup`）と招待コード参加（`joinGroupByCode`）を
     1 モーダルにまとめた。成功時は `loadGroups` → 新/参加先グループを選択 → `group` 画面へ遷移。
   - `GroupView` は `group: GroupRow | null` を受け取る実データ表示に刷新。アバター・
@@ -602,9 +703,9 @@ Route Handler を置くのは以下のいずれかに該当する場合**のみ*
     `group_members` の AFTER DELETE トリガー `on_group_member_left` / `delete_empty_group`
     （SECURITY DEFINER）が、残メンバー 0 件のときに `groups` 行を削除する。owner 概念は
     UI に出さず、owner も自由に脱退できる。`GroupView` は最後の1人（`members.length === 1`）
-    のとき警告文と強い確認ダイアログを出し、脱退前に今後の勉強会を
-    `unsyncSessionFromCalendar` で片付ける。`groups_delete_owner` は `groups_delete_member`
-    （メンバー全員可）へ緩めた。
+    のとき警告文と強い確認ダイアログを出す。`groups_delete_owner` は `groups_delete_member`
+    （メンバー全員可）へ緩めた。カレンダーの後始末は
+    `POST /api/groups/[id]/leave` に移した（「削除経路と孤立データ」節を参照）。
 - **完了条件（達成）**: 別アカウントが招待コードで参加すると、両者のメンバー一覧に出る。
 
 ### 7. 共有（shelf_shares / question_set_shares） ✅ 完了
@@ -696,13 +797,9 @@ UI に存在するが、デモ導線から外れるため今回は触らない�
 - **学習時間タイマー** — [`HomeView.tsx`](../app/components/views/HomeView.tsx) /
   [`TasksView.tsx`](../app/components/views/TasksView.tsx) の「時間を記録」。
   対応テーブルが無い（事後入力の `assignment_reports.minutes_spent` のみ存在）。
-- **課題（assignments）と TasksView** — `assignments` / `assignment_reports` はテーブルだけ存在。
-  [`AssignmentReportModal.tsx`](../app/components/modals/AssignmentReportModal.tsx) の
-  `{ minutesSpent, comment }` はそのまま `minutes_spent` / `comment` に対応する。
-  `assignments.shelf_id` は NOT NULL なので、課題作成 UI には棚ピッカーが要る点に注意。
 - **勉強会の参加者数**（`GroupView` の「参加 5人」）— 出欠テーブルが無い。
-- **アクティビティフィード**（`GroupView` の「みんなの学習記録」）—
-  `assignment_reports` + `profiles` join に依存するため課題機能とセット。
+- **課題の共有先の後編集** — 作成時にしか共有先を選べない。
+  `lib/data/assignments.ts:updateAssignmentShares` は用意してあるが UI 未接続。
 - **`supabase gen types typescript` への差し替え** — 当面は `lib/supabase/types.ts` を手書きで延命
   （タスク 1 で新列と `Functions` を手で追加）。プロジェクトが安定したら
   `supabase gen types typescript --project-id=<id>` の出力に差し替える。

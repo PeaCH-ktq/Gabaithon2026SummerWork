@@ -9,24 +9,58 @@ type AssignmentInsert = Database["public"]["Tables"]["assignments"]["Insert"];
 type AssignmentReportRow =
   Database["public"]["Tables"]["assignment_reports"]["Row"];
 
+/** 課題の行に共有先グループ ID を添えたもの。 */
+export type Assignment = AssignmentRow & { groupIds: string[] };
+
 /**
- * 自分に見える課題の一覧（RLS: 所属グループへ共有された課題、または自分の棚の課題）。
+ * 自分に見える課題の一覧（RLS: 所属グループへ可視共有された課題、または自分の棚の課題）。
  * 締切が近い順。
+ *
+ * 共有先は `assignment_shares` から引いて JS で畳む。PostgREST の埋め込みを
+ * 使わないのは `lib/supabase/types.ts` の `Relationships: []` が手書きのままだと
+ * 型推論が壊れるため（`lib/data/shelves.ts:listShelves` と同じ理由）。
  */
-export async function listAssignments(supabase: DB): Promise<AssignmentRow[]> {
-  return unwrap(
+export async function listAssignments(supabase: DB): Promise<Assignment[]> {
+  const rows = unwrap(
     await supabase.from("assignments").select("*").order("due_at", { ascending: true }),
     "課題の取得",
   );
+  if (rows.length === 0) return [];
+
+  const shares = unwrap(
+    await supabase
+      .from("assignment_shares")
+      .select("assignment_id, group_id")
+      .in("assignment_id", rows.map((r) => r.id)),
+    "課題の共有先の取得",
+  );
+  const groupIdsByAssignment = new Map<string, string[]>();
+  for (const s of shares) {
+    const list = groupIdsByAssignment.get(s.assignment_id) ?? [];
+    list.push(s.group_id);
+    groupIdsByAssignment.set(s.assignment_id, list);
+  }
+
+  return rows.map((row) => ({
+    ...row,
+    groupIds: groupIdsByAssignment.get(row.id) ?? [],
+  }));
 }
 
+/**
+ * 課題を作成し、`groupIds` のグループへ共有する。
+ * `groupIds` が空なら本人（と棚の所有者）だけが見られる個人課題になる。
+ */
 export async function createAssignment(
   supabase: DB,
   input: Omit<AssignmentInsert, "created_by">,
-): Promise<AssignmentRow> {
+  groupIds: string[] = [],
+): Promise<Assignment> {
   const { data: auth } = await supabase.auth.getUser();
   if (!auth.user) throw new Error("ログインが必要です。");
-  return unwrap(
+  // `unwrap` の型引数は戻り値の文脈から決まる。const に受けるとその文脈が
+  // 無くなって never に落ちるため、明示的に注釈する。
+  const row: AssignmentRow = unwrap(
     await supabase
       .from("assignments")
       .insert({ ...input, created_by: auth.user.id })
@@ -34,6 +68,52 @@ export async function createAssignment(
       .single(),
     "課題の作成",
   );
+
+  if (groupIds.length === 0) return { ...row, groupIds: [] };
+
+  const { error } = await supabase
+    .from("assignment_shares")
+    .insert(groupIds.map((groupId) => ({ assignment_id: row.id, group_id: groupId })));
+  if (error) {
+    // 共有に失敗した課題が個人課題として残ると分かりにくいので巻き戻す。
+    await supabase.from("assignments").delete().eq("id", row.id);
+    console.error("[data] 課題の共有", error);
+    throw new Error("課題の共有に失敗しました。");
+  }
+  return { ...row, groupIds };
+}
+
+/** 課題の共有先を差分更新する（`app/page.tsx:saveShares` と同じ形）。 */
+export async function updateAssignmentShares(
+  supabase: DB,
+  assignmentId: string,
+  groupIds: string[],
+  currentGroupIds: string[],
+): Promise<void> {
+  const next = new Set(groupIds);
+  const toAdd = groupIds.filter((id) => !currentGroupIds.includes(id));
+  const toRemove = currentGroupIds.filter((id) => !next.has(id));
+
+  if (toAdd.length > 0) {
+    const { error } = await supabase
+      .from("assignment_shares")
+      .insert(toAdd.map((groupId) => ({ assignment_id: assignmentId, group_id: groupId })));
+    if (error) {
+      console.error("[data] 課題の共有", error);
+      throw new Error("課題の共有に失敗しました。");
+    }
+  }
+  if (toRemove.length > 0) {
+    const { error } = await supabase
+      .from("assignment_shares")
+      .delete()
+      .eq("assignment_id", assignmentId)
+      .in("group_id", toRemove);
+    if (error) {
+      console.error("[data] 課題の共有解除", error);
+      throw new Error("課題の共有解除に失敗しました。");
+    }
+  }
 }
 
 /** 自分の課題結果報告一覧（`assignment_reports_write_own` により自分の行は常に見える）。 */
@@ -118,28 +198,51 @@ export type GroupStudyLogEntry = {
 
 /**
  * グループに共有された課題へのメンバーの結果報告一覧（新しい順、直近30件）。
- * RLS（`assignment_reports_select`）により、グループ共有課題の report は
- * メンバー全員に見える。埋め込み JOIN は使わず 3 クエリ + JS 結合。
+ * 埋め込み JOIN は使わずクエリ + JS 結合。
+ *
+ * **このグループのメンバーが書いた report だけ**に絞っている点に注意。
+ * 課題を複数グループへ同時共有できるようになったため、`assignment_reports_select`
+ * （= `is_assignment_visible`）だけに任せると、グループ A のメンバーの記録が
+ * グループ B の画面にも出てしまう。同じ課題を共有している以上 RLS としては
+ * 筋が通っているが、利用者にとっては驚きになるので表示側で閉じる。
+ * 方針を反転したければこの絞り込みを外すだけでよい。
  */
 export async function listGroupStudyLog(
   supabase: DB,
   groupId: string,
 ): Promise<GroupStudyLogEntry[]> {
+  const shares = unwrap(
+    await supabase
+      .from("assignment_shares")
+      .select("assignment_id")
+      .eq("group_id", groupId),
+    "学習記録の取得",
+  );
+  if (shares.length === 0) return [];
+
   const assignments = unwrap(
     await supabase
       .from("assignments")
       .select("id, title")
-      .eq("group_id", groupId),
+      .in("id", shares.map((s) => s.assignment_id)),
     "学習記録の取得",
   );
   if (assignments.length === 0) return [];
   const titleById = new Map(assignments.map((a) => [a.id, a.title]));
+
+  const members = unwrap(
+    await supabase.from("group_members").select("user_id").eq("group_id", groupId),
+    "学習記録の取得",
+  );
+  const memberIds = members.map((m) => m.user_id);
+  if (memberIds.length === 0) return [];
 
   const reports = unwrap(
     await supabase
       .from("assignment_reports")
       .select("*")
       .in("assignment_id", assignments.map((a) => a.id))
+      .in("user_id", memberIds)
       .order("created_at", { ascending: false })
       .limit(30),
     "学習記録の取得",
@@ -168,11 +271,10 @@ export async function listGroupStudyLog(
 }
 
 /**
- * 課題を作成する棚の共有先グループを自動決定する。
- * 表示中（visible）の共有先がちょうど1件ならそのグループに共有し、
- * 0件・複数件の場合は本人のみ閲覧できる個人課題（null）にする。
+ * 課題の共有先として選べるグループ（＝棚が「表示中」で共有されているグループ）。
+ * `assignment_shares` の insert ポリシー（`assignment_shelf_shared_to`）が
+ * 同じ条件を要求するので、UI の選択肢はこれと一致させる。
  */
-export function pickAssignmentGroupId(shelf: Shelf): string | null {
-  const visible = shelf.shares.filter((s) => s.visible);
-  return visible.length === 1 ? visible[0].group_id : null;
+export function shareableGroupIds(shelf: Shelf): string[] {
+  return shelf.shares.filter((s) => s.visible).map((s) => s.group_id);
 }
