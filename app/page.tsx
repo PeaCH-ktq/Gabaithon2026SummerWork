@@ -561,6 +561,8 @@ export default function Home() {
             shelves={shelves}
             shelvesState={shelvesState}
             assignments={upcomingAssignments}
+            sessions={sessions}
+            sessionsState={sessionsState}
             selectShelf={selectCourse}
             materialsByShelf={courseMaterials}
             materialsState={materialsState}

@@ -8,8 +8,10 @@ import type {
   Navigate,
   QuestionSetRow,
   Shelf,
+  StudySessionRow,
 } from "../../types";
 import type { AssignmentView } from "@/lib/format/assignments";
+import { formatSessionDate, formatSessionRange } from "@/lib/format/datetime";
 import { Button, Icon } from "../ui";
 import { CourseView } from "./CourseView";
 
@@ -26,6 +28,8 @@ type Props = {
   shelves: Shelf[];
   shelvesState: LoadState;
   assignments: AssignmentView[];
+  sessions: StudySessionRow[];
+  sessionsState: LoadState;
   navigate: Navigate;
   startCreate: () => void;
   openShelf: () => void;
@@ -51,6 +55,8 @@ export function HomeView({
   shelves,
   shelvesState,
   assignments,
+  sessions,
+  sessionsState,
   navigate,
   startCreate,
   openShelf,
@@ -79,20 +85,6 @@ export function HomeView({
   }).format(new Date());
   const openedShelf =
     shelves.find((shelf) => shelf.id === openedShelfId) ?? null;
-  const nextSessions = [
-    {
-      date: "9月6日（日）",
-      time: "14:00 – 18:00",
-      title: "データベース論 中間対策",
-      place: "中央図書館 グループ学習室B",
-    },
-    {
-      date: "9月9日（水）",
-      time: "10:00 – 12:00",
-      title: "OS 演習もくもく会",
-      place: "情報棟3F ラウンジ",
-    },
-  ];
   return (
     <>
       <header className="page-head">
@@ -153,17 +145,28 @@ export function HomeView({
             </button>
           </div>
           <div className="overview-list">
-            {nextSessions.map((session) => (
-              <button key={session.title} onClick={() => navigate("group")}>
+            {sessionsState === "loading" && (
+              <p className="muted">読み込んでいます…</p>
+            )}
+            {sessionsState === "error" && (
+              <p className="muted">勉強会の取得に失敗しました。</p>
+            )}
+            {sessionsState === "ready" && sessions.length === 0 && (
+              <p className="muted">直近の勉強会はありません。</p>
+            )}
+            {sessions.slice(0, 2).map((session) => (
+              <button key={session.id} onClick={() => navigate("group")}>
                 <span className="session-date">
-                  <b>{session.date}</b>
-                  <small>{session.time}</small>
+                  <b>{formatSessionDate(session.starts_at)}</b>
+                  <small>
+                    {formatSessionRange(session.starts_at, session.ends_at)}
+                  </small>
                 </span>
                 <span>
                   <b>{session.title}</b>
                   <small>
                     <Icon name="home" size={11} />
-                    <span>{session.place}</span>
+                    <span>{session.location ?? "場所未定"}</span>
                   </small>
                 </span>
                 <Icon name="arrow" size={15} />
